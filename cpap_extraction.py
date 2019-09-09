@@ -64,14 +64,14 @@ def setup_args():
     global DEBUG
 
     parser = argparse.ArgumentParser(description='CPAP_data_extraction')
-    parser.add_argument('source', nargs=1, help='path to CPAP data')
+    parser.add_argument('--source', nargs=1, default='000008aa.001', help='path to CPAP data')
     parser.add_argument('--destination', nargs=1, default='.',
                         help='path to place extracted files')
     parser.add_argument('-v', action='store_true', help='be VERBOSE')
     parser.add_argument('-d', action='store_true', help='debug mode')
 
     args = parser.parse_args()
-    (SOURCE,) = args.source
+    SOURCE = args.source
     (DESTINATION,) = args.destination
     VERBOSE = args.v
     DEBUG = args.d
@@ -192,8 +192,10 @@ def read_packets(input_file, delimeter):
     '''
     packet_array = []
     while True:
+        pos = input_file.tell()
         packet = read_packet(input_file, delimeter)
-        if packet == b'':
+        if packet == b'' or len(packet) > 400:
+            input_file.seek(pos)
             break
         packet_array.append(packet)
 
@@ -494,7 +496,7 @@ def processCpapBinary(packets):
             n += 1
         
     return data, n
-
+    
 
 # Global variables
 SOURCE = "."
