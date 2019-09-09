@@ -31,7 +31,11 @@ import struct                   # For unpacking binary data
 from datetime import datetime   # For converting UNIX time
 import warnings                 # For raising warnings
 import re                       # For ripping unixtimes out of strings
-
+import sys
+if sys.version_info < (3,6):
+    print("""Error Version Python version 3.6 of higher required.\n
+    If you are on python 4 this is untested, as python 4 does not yet exist.""")
+    exit(-1)
 
 def setup_args():
     '''
@@ -269,7 +273,7 @@ def extract_packet(packet, fields):
         number_of_bytes = C_TYPES.get(c_type)
         bytes_to_be_extracted = packet[:number_of_bytes]
         del packet[:number_of_bytes]
-        
+
         if DEBUG:
             print('Bytes in {}: {}'.format(field, bytes_to_be_extracted))
             print('Remaining bytes in packet: {}'.format(packet))
@@ -372,8 +376,8 @@ def convert_unix_time(unixtime):
 
 def convert_time_string(input_string):
     '''
-    Takes a string of the form "Start time: 1553245673000\n" and returns the 
-    UNIX time converted to the more human-readable format: 
+    Takes a string of the form "Start time: 1553245673000\n" and returns the
+    UNIX time converted to the more human-readable format:
     "Start time: 2019-03-22_09:07:53"
     '''
     time = separate_int(input_string)
