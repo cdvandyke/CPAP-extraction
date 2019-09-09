@@ -433,6 +433,64 @@ def write_file(input_file, destination, packet_type=None):
         for line in input_file:
             output.write(str(line))
 
+def processCpapBinary(packets):
+    '''
+    parses file in order to determine 
+        -order of data/data type
+        -the data
+        -data start and stop times for decompressing
+
+    Input 
+    ----------
+    packets: array of dictionaries containing the following info
+        {
+            ptype : 
+            subtype : 
+            seek_pos : 
+            data_type : 
+            no_entries :   # number of entries
+            time_1_str : 
+            time_2_str:
+            min_val : 
+            max_val :
+        }
+
+    Returns : data, n(number of packets that have associated data)
+    --------
+    data - dictonary of dictionaries with the following format
+    {
+        (data type int) : {
+                        no_entries : 
+                        values : 
+                        stop_times : 
+                        }
+
+        (data type int) : {
+                        no_entries : 
+                        values : 
+                        stop_times : 
+                        }
+    }
+
+    Notes
+    ------
+    
+    '''
+    data = {}
+    n = 0
+    for packet in packets:
+        # check if there is associated data
+        if packet["no_entries"] > 0:
+            data[packet["ptype"]] = {
+                "no_entries" = packet["no_entries"]
+                # TODO read entry data from file 'uint16'
+                # TODO read stop time data from file 'unint32'
+
+            }
+            n += 1
+        
+    return data, n
+
 
 # Global variables
 SOURCE = "."
