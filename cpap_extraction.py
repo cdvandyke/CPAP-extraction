@@ -486,7 +486,7 @@ def processCpapBinary(packets):
         # check if there is associated data
         if packet["no_entries"] > 0:
             data[packet["ptype"]] = {
-                "no_entries" = packet["no_entries"]
+                data["no_entries"] : packet["no_entries"]
                 # TODO read entry data from file 'uint16'
                 # TODO read stop time data from file 'unint32'
 
