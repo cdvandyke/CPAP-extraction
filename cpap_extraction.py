@@ -263,7 +263,7 @@ def extract_packet(packet, fields):
     '''
 
     global C_TYPES
-    data = []
+    data = {}
 
     for field in fields:
         if VERBOSE:
@@ -271,6 +271,7 @@ def extract_packet(packet, fields):
 
         c_type = fields.get(field)
         number_of_bytes = C_TYPES.get(c_type)
+        #remove bytes from back because little endian
         bytes_to_be_extracted = packet[:number_of_bytes]
         del packet[:number_of_bytes]
 
@@ -281,7 +282,7 @@ def extract_packet(packet, fields):
         c_type = '<' + c_type
         # https://stackoverflow.com/questions/13894350/what-does-the-comma-mean-in-pythons-unpack#13894363
         (extracted_line,) = struct.unpack(c_type, bytes_to_be_extracted)
-        data.append('{}: {}\n'.format(field, extracted_line))
+        data.update({field: extracted_line})
 
     return data
 
@@ -312,8 +313,8 @@ def extract_header(packet):
               'File type data': 'H',
               'Machine ID': 'I',
               'Session ID': 'I',
-              'Start time': 'Q',
-              'End time': 'Q',
+              'Start time': 'q',
+              'End time': 'q',
               'Compression': 'H',
               'Machine type': 'H',
               'Data size': 'I',
@@ -323,12 +324,46 @@ def extract_header(packet):
     header = extract_packet(packet, fields)
 
 
-    header[5] = convert_time_string(header[5])
-    header[6] = convert_time_string(header[6])
+    header["Start time"] = convert_unix_time(header["Start time"])
+    header["End time"] = convert_unix_time(header["End time"])
 
-    start_time = re.search('[^s \n]*$', header[5]).group()
+    start_time = header["Start time"]
 
     return header
+
+def data_from_packets(packets):
+    data_array = []
+
+    for packet in packets:
+        length = len(packet)
+        try:
+            field = EXTRACTION_FIELDS[len(packet)]
+            packet_data = extract_packet(packet, field)
+            blank = True
+            for (field, data) in packet_data.items():
+
+                if "time" in field:
+                    if data != 0:
+                        blank = False
+                        packet_data[field] = convert_unix_time(data)
+            if blank:
+                packet_data.update({"subtype": 4})
+            elif length == 62:
+                packet_data.update({"subtype": 0})
+            elif length == 84:
+                packet_data.update({"subtype": 1})
+            elif length == 67:
+                packet_data.update({"subtype": 1, "type":1})
+            elif length == 68:
+                packet_data.update({"subtype": 3})
+
+            data_array.append(packet_data)
+
+        except KeyError:
+            break
+
+    return data_array
+
 
 
 def separate_int(input_string):
@@ -381,13 +416,14 @@ def convert_time_string(input_string):
     "Start time: 2019-03-22_09:07:53"
     '''
     time = separate_int(input_string)
-    time[1] = convert_unix_time(time[1])
+    time[1] = convert_unix_time(time)
     converted_string = ''.join(time)
     return converted_string
 
 
 def write_file(input_file, destination, packet_type=None):
     '''
+    BROKEN UNTIL FURTHER NOTICE
     Writes input_file out to the users' drive, in directory destination
 
     Parameters
@@ -438,13 +474,72 @@ def write_file(input_file, destination, packet_type=None):
             output.write(str(line))
 
 
+
+
 # Global variables
 SOURCE = "."
 DESTINATION = "."
 VERBOSE = False
 DEBUG = False
 start_time = 'INVALID START TIME'
-
+EXTRACTION_FIELDS = {
+# Type 0
+    62: {   'type':'B',
+            'time 1': 'q',
+            'time 2': 'q',
+            'no entries': 'L',
+            'U2': 'B',
+            'double 1': 'd',
+            'double 2': 'd',
+            'double 3': 'd',
+            'Min Val': 'd',
+            'Max Val': 'd'
+    },
+# Type 1
+    84: {    'type':'B',
+            'U1': 'd',
+            'U2': 'd',
+            'Data type': 'L',
+            'no packets': 'H',
+            'time 1': 'q',
+            'time 2': 'q',
+            'no entries': 'L',
+            'field 2': 'B',
+            'double 1': 'd',
+            'double 2': 'd',
+            'double 3': 'd',
+            'Min Val': 'd',
+            'Max Val': 'd'
+        },
+#Type 3
+    68: {   'type':'B',
+            'Data type': 'L',
+            'no packets': 'H',
+            'time 1': 'q',
+            'time 2': 'q',
+            'no entries': 'L',
+            'field 2': 'B',
+            'double 1': 'd',
+            'double 2': 'd',
+            'double 3': 'd',
+            'Min Val': 'd',
+            'Max Val': 'd'
+        },
+# Header
+    67: {   'Data type': 'H',
+            'U1': 'H',
+            'no packets': 'H',
+            'time 1': 'q',
+            'time 2': 'q',
+            'no entries': 'L',
+            'field 2': 'B',
+            'double 1': 'd',
+            'double 2': 'd',
+            'double 3': 'd',
+            'Min Val': 'd',
+            'Max Val': 'd'
+    }
+}
 # See https://docs.python.org/3/library/struct.html
 C_TYPES = {'c': 1,
            'b': 1,
@@ -466,8 +561,13 @@ if __name__ == '__main__':
 
     DATA_FILE = open_file(SOURCE)
     PACKET_DELIMETER = b'\xff\xff\xff\xff'
-
     PACKETS = read_packets(DATA_FILE, PACKET_DELIMETER)
+    header = extract_header(PACKETS[0])
+    data = data_from_packets(PACKETS)
+    with open("sample.txt",'a') as output:
+        for d in data:
+            output.write(str(d)+ "\n")
+        for p in PACKETS:
+            output.write(str(p)+"\n")
 
-    HEADER = extract_header(PACKETS[0])
-    write_file(HEADER, DESTINATION, 'header')
+    #write_file(HEADER, DESTINATION, 'header')
