@@ -194,7 +194,7 @@ def read_packets(input_file, delimeter):
     while True:
         pos = input_file.tell()
         packet = read_packet(input_file, delimeter)
-        if packet == b'' or len(packet) > 400:
+        if packet == b'' or len(packet) > 444:
             input_file.seek(pos)
             break
         packet_array.append(packet)
@@ -439,7 +439,7 @@ def write_file(input_file, destination, packet_type=None):
         for line in input_file:
             output.write(str(line))
 
-def processCpapBinary(packets):
+def process_cpap_binary(packets, filehandle):
     '''
     parses file in order to determine 
         -order of data/data type
@@ -459,7 +459,9 @@ def processCpapBinary(packets):
             time_2_str:
             min_val : 
             max_val :
+            double_2 :
         }
+    filehandle: rest of data
 
     Returns : data, n(number of packets that have associated data)
     --------
@@ -486,17 +488,59 @@ def processCpapBinary(packets):
     n = 0
     for packet in packets:
         # check if there is associated data
+        uint16_ctype = 'H'
+        uint16_bytes = C_TYPES.get(uint16_ctype)
+        uint16_ctype = '<' + uint16_ctype
+        uint32_ctype = 'I'
+        uint32_bytes = C_TYPES.get(uint32_ctype)
+        uint32_ctype = '<' + uint32_ctype
         if packet["no_entries"] > 0:
-            data[packet["ptype"]] = {
-                data["no_entries"] : packet["no_entries"]
-                # TODO read entry data from file 'uint16'
-                # TODO read stop time data from file 'unint32'
+            ptype = packet["ptype"]
+            data[ptype] = { }
+            data[ptype][data["no_entries"]] = packet["no_entries"]
 
-            }
+            # Read data values
+            data_vals = []
+            gain = packet["double_2"]
+            for _ in range(packet["no_entries"]):
+                read_bytes = filehandle.read(uint16_bytes)
+                (extracted_data,) = struct.unpack(uint16_ctype, read_bytes)
+                data_vals.append(filehandle.read(extracted_data)*gain)
+            data[ptype]["data_vals"] = data_vals
+
+            # Read stop times
+            data_vals = []
+            for _ in range(packet["no_entries"]):
+                read_bytes = filehandle.read(uint32_bytes)
+                (extracted_data,) = struct.unpack(uint32_ctype, read_bytes)
+                # divide time by 1000 to get to seconds
+                data_vals.append(filehandle.read(extracted_data)/1000)
+            data[ptype]["stop_times"] = data_vals
             n += 1
-        
     return data, n
-    
+
+def decompress_data(all_data):
+    '''
+    decompresses data
+
+    Input : all_data -- output from process_cpap_binary
+    Output : raw_data -- dictionary key = cpap string type, value = list of values
+    '''
+    # TODO get config file to determine desired data to be decompressed
+    # For right now, all we want is waveform -- cpap type 4352
+
+    raw_data = {}
+    desired = [4352]
+    for type in desired:
+        counter = 0
+        type_data = all_data[type]
+        decomp_data = []
+        for stop, val in zip(type_data["stop_times"], type_data["values"]):
+            for i in range(counter,stop):
+                decomp_data.append(val)
+            counter = stop
+        raw_data[type] = decomp_data
+    return raw_data
 
 # Global variables
 SOURCE = "."
@@ -518,7 +562,33 @@ C_TYPES = {'c': 1,
            'q': 8,
            'Q': 8,
            'f': 4,
-           'd': 8}
+           'd': 8
+           }
+
+CPAP_DATA_TYPE = {
+    4097 : "Clear Airway Apneas event", # (#13 and time offset for each event)
+    4098 : "Obstructive Apnea", # (#15 and time offset for each event
+    4099 : "Hypopneas", # events per hour
+    4102 : "RERA",
+    4103 : "Vibratory Snore", # events per hour
+    4104 : "System One (+DM) Vib snore event", # #1 and time
+    4105 : "Pressure Pulse",
+    4136 : "Unknown",
+    4352 : "Breathing Flow Rate Waveform", # (L/min)
+    4355 : "Tidal Volume", # (*20 for ml/min)
+    4356 : "Snore Volume", # (snores per some unit of time)
+    4357 : "Minute Ventilation", # (divide by 8 to get L)
+    4358 : "Respiratory Rate", # (BPM)
+    4360 : "Rate of detected mask leakage", # (L/min) units good
+    4362 : "Expiratory Time", # (Sec)
+    4363 : "Inspiratory Time", # (Sec)
+    4364 : "Unknown",
+    4366 : "Unknown",
+    4374 : "AHI",
+    4375 : "Total Leak Rate (L/min)",
+    4439 : "Unknown",
+    4440 : "Unknown"
+}
 
 
 if __name__ == '__main__':
