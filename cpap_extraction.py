@@ -368,6 +368,7 @@ def data_from_packets(packets):
 
 def separate_int(input_string):
     '''
+    REMOVE
     Converts input_string into an array, of the form [string, int, string]
     '''
     strings = re.findall(r'\D+', input_string)
@@ -411,6 +412,7 @@ def convert_unix_time(unixtime):
 
 def convert_time_string(input_string):
     '''
+    REMOVE
     Takes a string of the form "Start time: 1553245673000\n" and returns the
     UNIX time converted to the more human-readable format:
     "Start time: 2019-03-22_09:07:53"

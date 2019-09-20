@@ -43,3 +43,5 @@ venv.sh
 
 # Ignore burndown file
 *.ods
+
+cpap_gui\.py
