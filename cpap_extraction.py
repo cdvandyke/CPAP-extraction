@@ -418,7 +418,7 @@ def convert_time_string(input_string):
     "Start time: 2019-03-22_09:07:53"
     '''
     time = separate_int(input_string)
-    time[1] = convert_unix_time(time)
+    time[1] = convert_unix_time(time[1])
     converted_string = ''.join(time)
     return converted_string
 
