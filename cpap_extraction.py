@@ -331,32 +331,47 @@ def extract_header(packet):
 
     return header
 
-def data_from_packets(packets):
+def field_of_length(length, dict_list):
+    '''
+    Retrieves the dictionary of the given size
+    The only expected exception sould be a KeyError
+    '''
+    if type(dict_list) is not type([]):
+        raise TypeError("Error: the dictionary list must be a list of dictionarys.")
+    elif type(dict_list[0]) is not type({}):
+        raise TypeError("Error: the dictionary list must be a list of dictionarys.")
+    if type(length) is not type(1):
+        raise TypeError("Error: length {} is not of type Int.".format(length))
+
+    for dict in dict_list:
+        size = 0
+        try:
+            for (key, item) in dict.items():
+                size += C_TYPES[item]
+        except KeyError:
+            raise ValueError("Error: Dictionary values are not valid C_TYPES" )
+
+        if length == size:
+            return dict
+
+    # This is the only expected error
+    raise KeyError("Error: No dictionary of size {} found.".format(size))
+
+
+def data_from_packets(packets, dict_list = []):
+    '''
+    Extracts the data from a packet array.
+    '''
+    if dict_list == []:
+        dict_list = EXTRACTION_FIELDS
     data_array = []
 
     for packet in packets:
         length = len(packet)
         try:
-            field = EXTRACTION_FIELDS[len(packet)]
-            packet_data = extract_packet(packet, field)
-            blank = True
-            for (field, data) in packet_data.items():
-
-                if "time" in field:
-                    if data != 0:
-                        blank = False
-                        packet_data[field] = convert_unix_time(data)
-            if blank:
-                packet_data.update({"subtype": 4})
-            elif length == 62:
-                packet_data.update({"subtype": 0})
-            elif length == 84:
-                packet_data.update({"subtype": 1})
-            elif length == 67:
-                packet_data.update({"subtype": 1, "type":1})
-            elif length == 68:
-                packet_data.update({"subtype": 3})
-
+            fields = field_of_length(length, dict_list)
+            packet_data = extract_packet(packet, fields)
+            packet_data = apply_type_and_time(length, packet_data)
             data_array.append(packet_data)
 
         except KeyError:
@@ -364,6 +379,35 @@ def data_from_packets(packets):
 
     return data_array
 
+def apply_type_and_time(length, packet_data):
+    """
+    Applys the packet type, sub type and human readable time to the data.
+    Packet data is altered regerdless but the value is returned for readability
+    """
+    blank = True
+    for (field, data) in packet_data.items():
+        if "time" in field:
+            if data != 0 and type(data)is type(1):
+                blank = False
+                packet_data[field] = convert_unix_time(data)
+
+    if length == 67:
+        packet_data.update({'subtype': 1, 'type':1})
+    elif length == 62:
+        packet_data.update({'subtype': 0})
+    elif length == 84:
+        packet_data.update({'subtype': 1})
+    elif length == 68:
+        if blank:
+            packet_data.update({'subtype': 4})
+        else:
+            packet_data.update({'subtype': 3})
+
+    if VERBOSE:
+        print("Packet type {}.{} extracted.".format(
+                packet_data.get("type"), packet_data.get("subtype") ))
+
+    return packet_data
 
 
 def separate_int(input_string):
@@ -484,64 +528,65 @@ DESTINATION = "."
 VERBOSE = False
 DEBUG = False
 start_time = 'INVALID START TIME'
-EXTRACTION_FIELDS = {
-# Type 0
-    62: {   'type':'B',
-            'time 1': 'q',
-            'time 2': 'q',
-            'no entries': 'L',
-            'U2': 'B',
-            'double 1': 'd',
-            'double 2': 'd',
-            'double 3': 'd',
-            'Min Val': 'd',
-            'Max Val': 'd'
-    },
-# Type 1
-    84: {    'type':'B',
-            'U1': 'd',
-            'U2': 'd',
-            'Data type': 'L',
-            'no packets': 'H',
-            'time 1': 'q',
-            'time 2': 'q',
-            'no entries': 'L',
-            'field 2': 'B',
-            'double 1': 'd',
-            'double 2': 'd',
-            'double 3': 'd',
-            'Min Val': 'd',
-            'Max Val': 'd'
-        },
-#Type 3
-    68: {   'type':'B',
-            'Data type': 'L',
-            'no packets': 'H',
-            'time 1': 'q',
-            'time 2': 'q',
-            'no entries': 'L',
-            'field 2': 'B',
-            'double 1': 'd',
-            'double 2': 'd',
-            'double 3': 'd',
-            'Min Val': 'd',
-            'Max Val': 'd'
-        },
-# Header
-    67: {   'Data type': 'H',
-            'U1': 'H',
-            'no packets': 'H',
-            'time 1': 'q',
-            'time 2': 'q',
-            'no entries': 'L',
-            'field 2': 'B',
-            'double 1': 'd',
-            'double 2': 'd',
-            'double 3': 'd',
-            'Min Val': 'd',
-            'Max Val': 'd'
-    }
-}
+EXTRACTION_FIELDS = [
+        # Type 0
+            {   'type':'B',
+                'time 1': 'q',
+                'time 2': 'q',
+                'no entries': 'L',
+                'U2': 'B',
+                'double 1': 'd',
+                'double 2': 'd',
+                'double 3': 'd',
+                'Min Val': 'd',
+                'Max Val': 'd'
+            },
+        # Type 1
+            {   'type':'B',
+                'U1': 'd',
+                'U2': 'd',
+                'Data type': 'L',
+                'no packets': 'H',
+                'time 1': 'q',
+                'time 2': 'q',
+                'no entries': 'L',
+                'field 2': 'B',
+                'double 1': 'd',
+                'double 2': 'd',
+                'double 3': 'd',
+                'Min Val': 'd',
+                'Max Val': 'd'
+            },
+        #Type 3
+            {   'type':'B',
+                'Data type': 'L',
+                'no packets': 'H',
+                'time 1': 'q',
+                'time 2': 'q',
+                'no entries': 'L',
+                'field 2': 'B',
+                'double 1': 'd',
+                'double 2': 'd',
+                'double 3': 'd',
+                'Min Val': 'd',
+                'Max Val': 'd'
+            },
+        # Header
+            {   'Data type': 'H',
+                'U1': 'H',
+                'no packets': 'H',
+                'time 1': 'q',
+                'time 2': 'q',
+                'no entries': 'L',
+                'field 2': 'B',
+                'double 1': 'd',
+                'double 2': 'd',
+                'double 3': 'd',
+                'Min Val': 'd',
+                'Max Val': 'd'
+            }
+        ]
+
 # See https://docs.python.org/3/library/struct.html
 C_TYPES = {'c': 1,
            'b': 1,
@@ -569,7 +614,5 @@ if __name__ == '__main__':
     with open("sample.txt",'a') as output:
         for d in data:
             output.write(str(d)+ "\n")
-        for p in PACKETS:
-            output.write(str(p)+"\n")
 
     #write_file(HEADER, DESTINATION, 'header')

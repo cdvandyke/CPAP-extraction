@@ -252,6 +252,71 @@ class test_separate_int(unittest.TestCase):
         self.assertEqual(separated_string, ['Test time: ', 451, ' TEST\n'])
 
 
+class TestApplyDateandTime(unittest.TestCase):
+
+    def test_type_0_3(self):
+        expected_output = {'type': 0, 'time 1': '2019-03-01_08-28-46', 'time 2': '2019-03-01_11-54-15', 'no entries': 207, 'field 2': 1, 'subtype': 3}
+        input = {'type': 0, 'time 1': 1551428926000, 'time 2': 1551441255000, 'no entries': 207, 'field 2': 1}
+        output = cpap_extraction.apply_type_and_time(68, input)
+        self.assertEqual(output, expected_output)
+
+    def test_first_packet(self):
+        input = {'Data type': 4440, 'U1': 0, 'no packets': 1}
+        expected_output = {'Data type': 4440, 'U1': 0, 'no packets': 1, 'type':1, 'subtype':1}
+        output = cpap_extraction.apply_type_and_time(67, input)
+        self.assertEqual(output, expected_output)
+
+    def test_type_0_4(self):
+        expected_output = {'type': 0, 'Data type': 4377, 'no packets': 1, 'time 1': 0, 'time 2': 0, 'subtype': 4}
+        input = {'type': 0, 'Data type': 4377, 'no packets': 1, 'time 1': 0, 'time 2': 0}
+        output = cpap_extraction.apply_type_and_time(68, input)
+        self.assertEqual(output, expected_output)
+
+    def test_type_1(self):
+        expected_output = {'type': 1, 'Data type': 4377, 'no packets': 1, 'time 1': 0, 'time 2': 0, 'subtype': 1}
+        input = {'type': 1, 'Data type': 4377, 'no packets': 1, 'time 1': 0, 'time 2': 0}
+        output = cpap_extraction.apply_type_and_time(84, input)
+        self.assertEqual(output, expected_output)
+
+    def test_type_0_0(self):
+        expected_output = {'type': 0, 'Data type': 4377, 'no packets': 1, 'time 1': 0, 'time 2': 0, 'no entries': 207, 'field 2': 1, 'subtype': 0 }
+        input = {'type': 0, 'Data type': 4377, 'no packets': 1, 'time 1': 0, 'time 2': 0, 'no entries': 207, 'field 2': 1}
+        output = cpap_extraction.apply_type_and_time(62, input)
+        self.assertEqual(output, expected_output)
+
+    def test_no_change(self):
+        input = {'type': 1, 'Data type': 4377, 'no packets': 1, 'time 1': "time 1", 'time 2': "time 2", 'no entries': 207, 'field 2': 1}
+        inputf = input.copy()
+        output = cpap_extraction.apply_type_and_time(-1, inputf)
+        self.assertDictEqual(output, input)
+
+class TestFieldOfLength(unittest.TestCase):
+    '''
+    Tests the "fields_of_length" method
+    '''
+    def test_type_error(self):
+        with self.assertRaises(TypeError):
+            cpap_extraction.field_of_length(25, {'Just a dictionary not a list': 'e'})
+        with self.assertRaises(TypeError):
+            cpap_extraction.field_of_length("nope", [{'somedata': 'Q'}])
+        with self.assertRaises(TypeError):
+            cpap_extraction.field_of_length(25, ['Not a dictioary'])
+
+    def test_key_error(self):
+        with self.assertRaises(KeyError):
+            cpap_extraction.field_of_length(25, [{"only 8": 'Q'}])
+
+    def test_value_error(self):
+        with self.assertRaises(ValueError):
+            cpap_extraction.field_of_length(25, [{"invalid c type": 'nope'}])
+
+    def test_normal(self):
+        eight = {"8": 'q'}
+        four = {"4": 'i'}
+        sixteen = {"8": 'q', "another 8": 'Q'}
+        dicts = [eight, four, sixteen]
+        self.assertEqual(cpap_extraction.field_of_length(4,dicts), four)
+
 class TestWriteFile(unittest.TestCase):
     '''
     Tests the write_file method, which takes a file object created by the
