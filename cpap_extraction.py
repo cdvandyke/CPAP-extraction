@@ -263,7 +263,7 @@ def extract_packet(packet, fields):
     '''
 
     global C_TYPES
-    data = []
+    data = {}
 
     for field in fields:
         if VERBOSE:
@@ -271,6 +271,7 @@ def extract_packet(packet, fields):
 
         c_type = fields.get(field)
         number_of_bytes = C_TYPES.get(c_type)
+        #remove bytes from back because little endian
         bytes_to_be_extracted = packet[:number_of_bytes]
         del packet[:number_of_bytes]
 
@@ -281,7 +282,7 @@ def extract_packet(packet, fields):
         c_type = '<' + c_type
         # https://stackoverflow.com/questions/13894350/what-does-the-comma-mean-in-pythons-unpack#13894363
         (extracted_line,) = struct.unpack(c_type, bytes_to_be_extracted)
-        data.append('{}: {}\n'.format(field, extracted_line))
+        data.update({field: extracted_line})
 
     return data
 
@@ -312,8 +313,8 @@ def extract_header(packet):
               'File type data': 'H',
               'Machine ID': 'I',
               'Session ID': 'I',
-              'Start time': 'Q',
-              'End time': 'Q',
+              'Start time': 'q',
+              'End time': 'q',
               'Compression': 'H',
               'Machine type': 'H',
               'Data size': 'I',
@@ -323,16 +324,95 @@ def extract_header(packet):
     header = extract_packet(packet, fields)
 
 
-    header[5] = convert_time_string(header[5])
-    header[6] = convert_time_string(header[6])
+    header["Start time"] = convert_unix_time(header["Start time"])
+    header["End time"] = convert_unix_time(header["End time"])
 
-    start_time = re.search('[^s \n]*$', header[5]).group()
+    start_time = header["Start time"]
 
     return header
+
+def field_of_length(length, dict_list):
+    '''
+    Retrieves the dictionary of the given size
+    The only expected exception sould be a KeyError
+    '''
+    if type(dict_list) is not type([]):
+        raise TypeError("Error: the dictionary list must be a list of dictionarys.")
+    elif type(dict_list[0]) is not type({}):
+        raise TypeError("Error: the dictionary list must be a list of dictionarys.")
+    if type(length) is not type(1):
+        raise TypeError("Error: length {} is not of type Int.".format(length))
+
+    for dict in dict_list:
+        size = 0
+        try:
+            for (key, item) in dict.items():
+                size += C_TYPES[item]
+        except KeyError:
+            raise ValueError("Error: Dictionary values are not valid C_TYPES" )
+
+        if length == size:
+            return dict
+
+    # This is the only expected error
+    raise KeyError("Error: No dictionary of size {} found.".format(size))
+
+
+def data_from_packets(packets, dict_list = []):
+    '''
+    Extracts the data from a packet array.
+    '''
+    if dict_list == []:
+        dict_list = EXTRACTION_FIELDS
+    data_array = []
+
+    for packet in packets:
+        length = len(packet)
+        try:
+            fields = field_of_length(length, dict_list)
+            packet_data = extract_packet(packet, fields)
+            packet_data = apply_type_and_time(length, packet_data)
+            data_array.append(packet_data)
+
+        except KeyError:
+            break
+
+    return data_array
+
+def apply_type_and_time(length, packet_data):
+    """
+    Applys the packet type, sub type and human readable time to the data.
+    Packet data is altered regerdless but the value is returned for readability
+    """
+    blank = True
+    for (field, data) in packet_data.items():
+        if "time" in field:
+            if data != 0 and type(data)is type(1):
+                blank = False
+                packet_data[field] = convert_unix_time(data)
+
+    if length == 67:
+        packet_data.update({'subtype': 1, 'type':1})
+    elif length == 62:
+        packet_data.update({'subtype': 0})
+    elif length == 84:
+        packet_data.update({'subtype': 1})
+    elif length == 68:
+        if blank:
+            packet_data.update({'subtype': 4})
+        else:
+            packet_data.update({'subtype': 3})
+
+    if VERBOSE:
+        print("Packet type {}.{} extracted.".format(
+                packet_data.get("type"), packet_data.get("subtype") ))
+
+    return packet_data
 
 
 def separate_int(input_string):
     '''
+    REMOVE
     Converts input_string into an array, of the form [string, int, string]
     '''
     strings = re.findall(r'\D+', input_string)
@@ -376,6 +456,7 @@ def convert_unix_time(unixtime):
 
 def convert_time_string(input_string):
     '''
+    REMOVE
     Takes a string of the form "Start time: 1553245673000\n" and returns the
     UNIX time converted to the more human-readable format:
     "Start time: 2019-03-22_09:07:53"
@@ -388,6 +469,7 @@ def convert_time_string(input_string):
 
 def write_file(input_file, destination, packet_type=None):
     '''
+    BROKEN UNTIL FURTHER NOTICE
     Writes input_file out to the users' drive, in directory destination
 
     Parameters
@@ -438,12 +520,72 @@ def write_file(input_file, destination, packet_type=None):
             output.write(str(line))
 
 
+
+
 # Global variables
 SOURCE = "."
 DESTINATION = "."
 VERBOSE = False
 DEBUG = False
 start_time = 'INVALID START TIME'
+EXTRACTION_FIELDS = [
+        # Type 0
+            {   'type':'B',
+                'time 1': 'q',
+                'time 2': 'q',
+                'no entries': 'L',
+                'U2': 'B',
+                'double 1': 'd',
+                'double 2': 'd',
+                'double 3': 'd',
+                'Min Val': 'd',
+                'Max Val': 'd'
+            },
+        # Type 1
+            {   'type':'B',
+                'U1': 'd',
+                'U2': 'd',
+                'Data type': 'L',
+                'no packets': 'H',
+                'time 1': 'q',
+                'time 2': 'q',
+                'no entries': 'L',
+                'field 2': 'B',
+                'double 1': 'd',
+                'double 2': 'd',
+                'double 3': 'd',
+                'Min Val': 'd',
+                'Max Val': 'd'
+            },
+        #Type 3
+            {   'type':'B',
+                'Data type': 'L',
+                'no packets': 'H',
+                'time 1': 'q',
+                'time 2': 'q',
+                'no entries': 'L',
+                'field 2': 'B',
+                'double 1': 'd',
+                'double 2': 'd',
+                'double 3': 'd',
+                'Min Val': 'd',
+                'Max Val': 'd'
+            },
+        # Header
+            {   'Data type': 'H',
+                'U1': 'H',
+                'no packets': 'H',
+                'time 1': 'q',
+                'time 2': 'q',
+                'no entries': 'L',
+                'field 2': 'B',
+                'double 1': 'd',
+                'double 2': 'd',
+                'double 3': 'd',
+                'Min Val': 'd',
+                'Max Val': 'd'
+            }
+        ]
 
 # See https://docs.python.org/3/library/struct.html
 C_TYPES = {'c': 1,
@@ -466,8 +608,11 @@ if __name__ == '__main__':
 
     DATA_FILE = open_file(SOURCE)
     PACKET_DELIMETER = b'\xff\xff\xff\xff'
-
     PACKETS = read_packets(DATA_FILE, PACKET_DELIMETER)
+    header = extract_header(PACKETS[0])
+    data = data_from_packets(PACKETS)
+    with open("sample.txt",'a') as output:
+        for d in data:
+            output.write(str(d)+ "\n")
 
-    HEADER = extract_header(PACKETS[0])
-    write_file(HEADER, DESTINATION, 'header')
+    #write_file(HEADER, DESTINATION, 'header')

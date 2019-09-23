@@ -152,10 +152,10 @@ class TestExtractPacket(unittest.TestCase):
 
         input_file = bytearray(b'''\x2a\x00\xc3\x01\x00\x00\xc9\x07\xcc\x00\xaa\xaa\x42\x1a\xcd\x79\x40\x09''')
 
-        correct_output = ['Test unsigned short: 42\n',
-                          'Test unsigned int: 451\n',
-                          'Test unsigned long: 13371337\n',
-                          'Test unsigned long long: 666666666666666666\n']
+        correct_output = {'Test unsigned short': 42,
+                          'Test unsigned int': 451,
+                          'Test unsigned long': 13371337,
+                          'Test unsigned long long': 666666666666666666}
 
         extracted_packet = cpap_extraction.extract_packet(input_file, fields)
 
@@ -251,6 +251,71 @@ class test_separate_int(unittest.TestCase):
         separated_string = cpap_extraction.separate_int(input_string)
         self.assertEqual(separated_string, ['Test time: ', 451, ' TEST\n'])
 
+
+class TestApplyDateandTime(unittest.TestCase):
+
+    def test_type_0_3(self):
+        expected_output = {'type': 0, 'time 1': '2019-03-01_08-28-46', 'time 2': '2019-03-01_11-54-15', 'no entries': 207, 'field 2': 1, 'subtype': 3}
+        input = {'type': 0, 'time 1': 1551428926000, 'time 2': 1551441255000, 'no entries': 207, 'field 2': 1}
+        output = cpap_extraction.apply_type_and_time(68, input)
+        self.assertEqual(output, expected_output)
+
+    def test_first_packet(self):
+        input = {'Data type': 4440, 'U1': 0, 'no packets': 1}
+        expected_output = {'Data type': 4440, 'U1': 0, 'no packets': 1, 'type':1, 'subtype':1}
+        output = cpap_extraction.apply_type_and_time(67, input)
+        self.assertEqual(output, expected_output)
+
+    def test_type_0_4(self):
+        expected_output = {'type': 0, 'Data type': 4377, 'no packets': 1, 'time 1': 0, 'time 2': 0, 'subtype': 4}
+        input = {'type': 0, 'Data type': 4377, 'no packets': 1, 'time 1': 0, 'time 2': 0}
+        output = cpap_extraction.apply_type_and_time(68, input)
+        self.assertEqual(output, expected_output)
+
+    def test_type_1(self):
+        expected_output = {'type': 1, 'Data type': 4377, 'no packets': 1, 'time 1': 0, 'time 2': 0, 'subtype': 1}
+        input = {'type': 1, 'Data type': 4377, 'no packets': 1, 'time 1': 0, 'time 2': 0}
+        output = cpap_extraction.apply_type_and_time(84, input)
+        self.assertEqual(output, expected_output)
+
+    def test_type_0_0(self):
+        expected_output = {'type': 0, 'Data type': 4377, 'no packets': 1, 'time 1': 0, 'time 2': 0, 'no entries': 207, 'field 2': 1, 'subtype': 0 }
+        input = {'type': 0, 'Data type': 4377, 'no packets': 1, 'time 1': 0, 'time 2': 0, 'no entries': 207, 'field 2': 1}
+        output = cpap_extraction.apply_type_and_time(62, input)
+        self.assertEqual(output, expected_output)
+
+    def test_no_change(self):
+        input = {'type': 1, 'Data type': 4377, 'no packets': 1, 'time 1': "time 1", 'time 2': "time 2", 'no entries': 207, 'field 2': 1}
+        inputf = input.copy()
+        output = cpap_extraction.apply_type_and_time(-1, inputf)
+        self.assertDictEqual(output, input)
+
+class TestFieldOfLength(unittest.TestCase):
+    '''
+    Tests the "fields_of_length" method
+    '''
+    def test_type_error(self):
+        with self.assertRaises(TypeError):
+            cpap_extraction.field_of_length(25, {'Just a dictionary not a list': 'e'})
+        with self.assertRaises(TypeError):
+            cpap_extraction.field_of_length("nope", [{'somedata': 'Q'}])
+        with self.assertRaises(TypeError):
+            cpap_extraction.field_of_length(25, ['Not a dictioary'])
+
+    def test_key_error(self):
+        with self.assertRaises(KeyError):
+            cpap_extraction.field_of_length(25, [{"only 8": 'Q'}])
+
+    def test_value_error(self):
+        with self.assertRaises(ValueError):
+            cpap_extraction.field_of_length(25, [{"invalid c type": 'nope'}])
+
+    def test_normal(self):
+        eight = {"8": 'q'}
+        four = {"4": 'i'}
+        sixteen = {"8": 'q', "another 8": 'Q'}
+        dicts = [eight, four, sixteen]
+        self.assertEqual(cpap_extraction.field_of_length(4,dicts), four)
 
 class TestWriteFile(unittest.TestCase):
     '''
