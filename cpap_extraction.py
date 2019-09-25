@@ -27,6 +27,7 @@ VERBOSE : bool
 '''
 import argparse                 # For command line arguments
 import os                       # For file IO
+import io
 import struct                   # For unpacking binary data
 from datetime import datetime   # For converting UNIX time
 import warnings                 # For raising warnings
@@ -39,6 +40,7 @@ if sys.version_info < (3,6):
 
 def setup_args():
     '''
+    !TODO TEST
     Sets up command-line arguments
 
     Attributes
@@ -58,8 +60,6 @@ def setup_args():
 
     args : Parsed Arguments
     '''
-    global SOURCE
-    global DESTINATION
     global VERBOSE
     global DEBUG
 
@@ -71,15 +71,35 @@ def setup_args():
     parser.add_argument('-d', action='store_true', help='debug mode')
 
     args = parser.parse_args()
-    (SOURCE,) = args.source
-    (DESTINATION,) = args.destination
+    source = args.source[0]
+    destination = args.destination
     VERBOSE = args.v
     DEBUG = args.d
+    return source, destination
 
+def extract_file(source_file, destination = '.', verbose = False, debug = False ):
+    """
+    The global variable loading will need to be changed once presets and config
+    files are enabled.
+    """
+    global VERBOSE
+    global DEBUG
+    VERBOSE = verbose
+    DEBUG = debug
+
+    data_file = open_file(source_file)
+    packets = split_packets(data_file)
+    header = extract_header(packets[0])
+    packet_data = data_from_packets(packets)
+
+    return header, packet_data
 
 def open_file(source):
     '''
-    Reads a SOURCE from the users' drive and returns the source as File
+    Reads a SOURCE from the users' drive and returns the source as a
+    memory copied file. This has the potential to use a lot of memmory if files
+    are particularly large but as the largest file we have seen is just over
+    500 KiB. This is not a pressing concern.
 
     Parameters
     ----------
@@ -104,10 +124,16 @@ def open_file(source):
 
     if not os.path.isfile(source):
         raise FileNotFoundError(
-            'ERROR: source file {} not found!'.format(SOURCE))
+            'ERROR: source file {} not found!'.format(source))
 
-    opened_file = open(source, 'rb')
-    return opened_file
+    with open(source, 'rb') as file:
+        binary_data = file.read()
+
+    try:
+        return io.BytesIO( binary_data)
+    except TypeError:
+        raise TypeError("ERROR: source file {} is not a binary file.".format(source))
+
 
 
 def read_packet(input_file, delimeter):
@@ -167,7 +193,7 @@ def read_packet(input_file, delimeter):
     return bytearray(packet)
 
 
-def read_packets(input_file, delimeter):
+def split_packets(input_file, delimeter = b'\xff\xff\xff\xff'):
     '''
     Using the read_packet method, returns all packet_array found in input_file
     in an array of packet_array.
@@ -289,6 +315,7 @@ def extract_packet(packet, fields):
 
 def extract_header(packet):
     '''
+    !TODO Test
     Uses extract_packet to extract the header information from a packet.
 
     Attributes
@@ -360,6 +387,7 @@ def field_of_length(length, dict_list):
 
 def data_from_packets(packets, dict_list = []):
     '''
+    !TODO TEst
     Extracts the data from a packet array.
     '''
     if dict_list == []:
@@ -467,64 +495,7 @@ def convert_time_string(input_string):
     return converted_string
 
 
-def write_file(input_file, destination, packet_type=None):
-    '''
-    BROKEN UNTIL FURTHER NOTICE
-    Writes input_file out to the users' drive, in directory destination
-
-    Parameters
-    ----------
-    input_file : file
-        The file to be written out
-
-    destination : Path
-        The directory to place the written out file
-
-    packet_type : String
-        The type of packet being written out (e.g., header, event summary)
-
-    Attributes
-    ----------
-    SOURCE : String
-        The name of the original file
-
-    output_name : String
-        The name of the output file
-
-    VERBOSE : bool
-        If True, print 'Now writing out SOURCE.JSON', where 'source' is the
-        name of the orginal file.
-    '''
-
-    global start_time
-    output_name = start_time + '.txt'
-
-    # Check if input_file is empty
-    if input_file == '':
-        warnings.warn('WARNING: Output is empty')
-
-    if VERBOSE:
-        print('Now writting {} to file {} at {}'.format(packet_type,
-                                                        output_name,
-                                                        destination))
-
-    if not os.path.isdir(destination):
-        raise FileNotFoundError(
-            'ERROR: destination directory {} not found!'.format(DESTINATION))
-
-    with open(destination + '/' + output_name, 'a') as output:
-        if packet_type is not None:
-            output.write('---{}---\n'.format(packet_type.upper()))
-
-        for line in input_file:
-            output.write(str(line))
-
-
-
-
 # Global variables
-SOURCE = "."
-DESTINATION = "."
 VERBOSE = False
 DEBUG = False
 start_time = 'INVALID START TIME'
@@ -603,16 +574,11 @@ C_TYPES = {'c': 1,
            'd': 8}
 
 
-if __name__ == '__main__':
-    setup_args()
 
-    DATA_FILE = open_file(SOURCE)
-    PACKET_DELIMETER = b'\xff\xff\xff\xff'
-    PACKETS = read_packets(DATA_FILE, PACKET_DELIMETER)
-    header = extract_header(PACKETS[0])
-    data = data_from_packets(PACKETS)
-    with open("sample.txt",'a') as output:
-        for d in data:
-            output.write(str(d)+ "\n")
+if __name__ == '__main__':
+    source, destination = setup_args()
+    header, packet_data = extract_file(source, destination, VERBOSE, DEBUG)
+    
+
 
     #write_file(HEADER, DESTINATION, 'header')

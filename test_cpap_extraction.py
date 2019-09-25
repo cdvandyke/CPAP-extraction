@@ -26,7 +26,8 @@ class TestOpenFile(unittest.TestCase):
     @patch('cpap_extraction.open')
     @patch('cpap_extraction.os.path.isfile', return_value=True)
     def test_open_file_exists(self, mocked_os, mocked_file):
-        cpap_extraction.open_file('Any file')
+        with self.assertRaises(TypeError):
+            cpap_extraction.open_file('Any file')
         mocked_file.assert_called_once_with('Any file', 'rb')
 
     @patch('cpap_extraction.open')
@@ -107,14 +108,14 @@ class TestReadPacket(unittest.TestCase):
 
 class TestReadPackets(unittest.TestCase):
     '''
-    Tests the read_packets method, which should simply call the read_packet
+    Tests the split_packets method, which should simply call the split_packet
     method for each packet in a data file.
 
     Methods
     -------
         testNormal
             Tests a data_file containing two packets, separated by a
-            delimeter of \xff\xff\xff\xff. Ensures that read_packets returns
+            delimeter of \xff\xff\xff\xff. Ensures that split_packets returns
             an array of size 2, and that the first index of the array contains
             the first packet, and the second index of the array contains the
             second packet
@@ -126,11 +127,11 @@ class TestReadPackets(unittest.TestCase):
     empty, etc. are tested in testReadPacket
     '''
 
-    def test_nomarl(self):
+    def test_normal(self):
         data_file = io.BytesIO(b'\x03\x0c\x01\x00\xff\xff\xff\xff\x45')
         delimeter = b'\xff\xff\xff\xff'
 
-        packets = cpap_extraction.read_packets(data_file, delimeter)
+        packets = cpap_extraction.split_packets(data_file, delimeter)
         self.assertEqual(len(packets), 2)
         self.assertEqual(packets[0], b'\x03\x0c\x01\x00')
         self.assertEqual(packets[1], b'\x45')
@@ -317,46 +318,30 @@ class TestFieldOfLength(unittest.TestCase):
         dicts = [eight, four, sixteen]
         self.assertEqual(cpap_extraction.field_of_length(4,dicts), four)
 
-class TestWriteFile(unittest.TestCase):
-    '''
-    Tests the write_file method, which takes a file object created by the
-    open_file method, and writes it out to a file called
-    orig_file_extracted.JSON, in the specified directory on the users' drive.
 
-    Methods
-    -------
-        testWriteFileDirExists
-            Tests whether write_file correctly creates a file called
-            orig_file_extracted.JSON in the specified directory
-        testWriteFileDirDoesNotExist
-            Tests whether write_file correctly raises the FileNotFoundError
-            exception if the specified directory to write the file into does
-            not exist
-        testWriteEmptyFile
-            Tests whether write_file correctly raises a warning if the input
-            File is empty
-    '''
+class TestExtractionSystem(unittest.TestCase):
+    def read_results_file(self, filename):
+        results = []
+        with open(filename, 'r') as rfile:
+            text = rfile.read()
+            lines = text.split('\n')
+            for line in lines:
+                expected = line.strip()
+                if expected != "":
+                    if expected[0] != '#':
+                        results.append(expected)
+        return results
 
-    @patch('cpap_extraction.open')
-    @patch('cpap_extraction.os.path.isdir', return_value=True)
-    def test_write_file_dir_exists(self, mocked_os, mocked_file):
-        # INVALID START TIME is the default value of start time, and thus, the
-        # default name of extracted files
-        cpap_extraction.write_file('Any file', 'Any directory')
-        mocked_file.assert_called_once_with('Any directory/INVALID START TIME.txt',
-                                            'a')
+    def test_file_one(self):
+        results = self.read_results_file("TestFiles/test_one_result.txt")
+        header, packet_data = cpap_extraction.extract_file("TestFiles/test_one.001")
+        headerstr = str(header).strip()
+        self.assertEqual(headerstr, results.pop(0))
 
-    @patch('cpap_extraction.open')
-    @patch('cpap_extraction.os.path.isdir', return_value=False)
-    def test_write_file_dir_does_not_exist(self, mocked_os, mocked_file):
-        with self.assertRaises(FileNotFoundError):
-            cpap_extraction.write_file('Any file', 'Any directory')
-
-    @patch('cpap_extraction.open')
-    @patch('cpap_extraction.os.path.isdir', return_value=True)
-    def test_write_empty_file(self, mocked_os, mocked_file):
-        with self.assertWarns(Warning):
-            cpap_extraction.write_file('', 'Any directory')
+        for packet in packet_data:
+            self.assertEqual(str(packet).strip(), results.pop(0))
+            
+        self.assertTrue(len(results) == 0)
 
 
 if __name__ == '__main__':

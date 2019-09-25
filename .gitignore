@@ -45,3 +45,6 @@ venv.sh
 *.ods
 
 cpap_gui\.py
+
+# Don't ignore files for testing
+!TestFiles/*
