@@ -1,0 +1,8 @@
+[run]
+include =
+	cpap_extraction.py
+
+[report]
+exclude_lines =
+	print*
+	if __name__ == '__main__':

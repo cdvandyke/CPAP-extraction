@@ -40,7 +40,7 @@ if sys.version_info < (3,6):
 
 def setup_args():
     '''
-    !TODO TEST
+    TODO: TEST
     Sets up command-line arguments
 
     Attributes
@@ -72,10 +72,12 @@ def setup_args():
 
     args = parser.parse_args()
     source = args.source[0]
-    destination = args.destination
+    destination = args.destination[0]
     VERBOSE = args.v
     DEBUG = args.d
+
     return source, destination
+
 
 def extract_file(source_file, destination = '.', verbose = False, debug = False ):
     """
@@ -93,6 +95,7 @@ def extract_file(source_file, destination = '.', verbose = False, debug = False 
     packet_data = data_from_packets(packets)
 
     return header, packet_data
+
 
 def open_file(source):
     '''
@@ -134,6 +137,38 @@ def open_file(source):
     except TypeError:
         raise TypeError("ERROR: source file {} is not a binary file.".format(source))
 
+
+def split_packets(input_file, delimeter = b'\xff\xff\xff\xff'):
+    '''
+    Using the read_packet method, returns all packet_array found in input_file
+    in an array of packet_array.
+
+    Paramters
+    ---------
+    input_file : File
+        A file object created by read_file(), this object contains the data
+        packet_array to be read
+
+    delimeter : bytes
+        The 'separator' of the packet_array in input_file. For .001 files, the
+        delimeter is b'\xff\xff\xff\xff'
+
+    Attributes
+    ----------
+    packet : bytes
+        The packet returned by read_packet
+
+    packet_array : Array <packets>
+        The packet array to be returned
+    '''
+    packet_array = []
+    while True:
+        packet = read_packet(input_file, delimeter)
+        if packet == b'':
+            break
+        packet_array.append(packet)
+
+    return packet_array
 
 
 def read_packet(input_file, delimeter):
@@ -193,37 +228,49 @@ def read_packet(input_file, delimeter):
     return bytearray(packet)
 
 
-def split_packets(input_file, delimeter = b'\xff\xff\xff\xff'):
+def extract_header(packet):
     '''
-    Using the read_packet method, returns all packet_array found in input_file
-    in an array of packet_array.
-
-    Paramters
-    ---------
-    input_file : File
-        A file object created by read_file(), this object contains the data
-        packet_array to be read
-
-    delimeter : bytes
-        The 'separator' of the packet_array in input_file. For .001 files, the
-        delimeter is b'\xff\xff\xff\xff'
+    TODO: Test
+    Uses extract_packet to extract the header information from a packet.
 
     Attributes
     ----------
-    packet : bytes
-        The packet returned by read_packet
+    fields : Dictionary {Field name: c_type}
+        A dictionary containing the various fields found in a header packet,
+        along with their corresponding c_type, which determines the number of
+        bytes that fiels uses. See the C_TYPES dictionary.
 
-    packet_array : Array <packets>
-        The packet array to be returned
+    Returns
+    --------
+    A method call to extract_packet, which itself will return a string array
+
+    Notes
+    ------
+    Only use this method on packets that you're sure are header packets
     '''
-    packet_array = []
-    while True:
-        packet = read_packet(input_file, delimeter)
-        if packet == b'':
-            break
-        packet_array.append(packet)
+    global start_time
 
-    return packet_array
+    fields = {'Magic number': 'I',
+              'File version': 'H',
+              'File type data': 'H',
+              'Machine ID': 'I',
+              'Session ID': 'I',
+              'Start time': 'q',
+              'End time': 'q',
+              'Compression': 'H',
+              'Machine type': 'H',
+              'Data size': 'I',
+              'CRC': 'H',
+              'MCSize': 'H'}
+
+    header = extract_packet(packet, fields)
+
+    header["Start time"] = convert_unix_time(header["Start time"])
+    header["End time"] = convert_unix_time(header["End time"])
+
+    start_time = header["Start time"]
+
+    return header
 
 
 def extract_packet(packet, fields):
@@ -293,7 +340,7 @@ def extract_packet(packet, fields):
 
     for field in fields:
         if VERBOSE:
-            print('Extracting {} from {}'.format(field, SOURCE))
+            print('Extracting {} from {}'.format(field, source))
 
         c_type = fields.get(field)
         number_of_bytes = C_TYPES.get(c_type)
@@ -313,50 +360,28 @@ def extract_packet(packet, fields):
     return data
 
 
-def extract_header(packet):
+def data_from_packets(packets, dict_list = []):
     '''
-    !TODO Test
-    Uses extract_packet to extract the header information from a packet.
-
-    Attributes
-    ----------
-    fields : Dictionary {Field name: c_type}
-        A dictionary containing the various fields found in a header packet,
-        along with their corresponding c_type, which determines the number of
-        bytes that fiels uses. See the C_TYPES dictionary.
-
-    Returns
-    --------
-    A method call to extract_packet, which itself will return a string array
-
-    Notes
-    ------
-    Only use this method on packets that you're sure are header packets
+    TODO: TEST
+    Extracts the data from a packet array.
     '''
-    global start_time
+    if dict_list == []:
+        dict_list = EXTRACTION_FIELDS
+    data_array = []
 
-    fields = {'Magic number': 'I',
-              'File version': 'H',
-              'File type data': 'H',
-              'Machine ID': 'I',
-              'Session ID': 'I',
-              'Start time': 'q',
-              'End time': 'q',
-              'Compression': 'H',
-              'Machine type': 'H',
-              'Data size': 'I',
-              'CRC': 'H',
-              'MCSize': 'H'}
+    for packet in packets:
+        length = len(packet)
+        try:
+            fields = field_of_length(length, dict_list)
+            packet_data = extract_packet(packet, fields)
+            packet_data = apply_type_and_time(length, packet_data)
+            data_array.append(packet_data)
 
-    header = extract_packet(packet, fields)
+        except KeyError:
+            break
 
+    return data_array
 
-    header["Start time"] = convert_unix_time(header["Start time"])
-    header["End time"] = convert_unix_time(header["End time"])
-
-    start_time = header["Start time"]
-
-    return header
 
 def field_of_length(length, dict_list):
     '''
@@ -384,28 +409,6 @@ def field_of_length(length, dict_list):
     # This is the only expected error
     raise KeyError("Error: No dictionary of size {} found.".format(size))
 
-
-def data_from_packets(packets, dict_list = []):
-    '''
-    !TODO TEst
-    Extracts the data from a packet array.
-    '''
-    if dict_list == []:
-        dict_list = EXTRACTION_FIELDS
-    data_array = []
-
-    for packet in packets:
-        length = len(packet)
-        try:
-            fields = field_of_length(length, dict_list)
-            packet_data = extract_packet(packet, fields)
-            packet_data = apply_type_and_time(length, packet_data)
-            data_array.append(packet_data)
-
-        except KeyError:
-            break
-
-    return data_array
 
 def apply_type_and_time(length, packet_data):
     """
@@ -438,18 +441,6 @@ def apply_type_and_time(length, packet_data):
     return packet_data
 
 
-def separate_int(input_string):
-    '''
-    REMOVE
-    Converts input_string into an array, of the form [string, int, string]
-    '''
-    strings = re.findall(r'\D+', input_string)
-    integer = re.search(r'\d+', input_string)
-
-    separated_string = [strings[0], int(integer.group()), strings[1]]
-    return separated_string
-
-
 def convert_unix_time(unixtime):
     '''
     Converts an integer, unitime, to a human-readable year-month-day,
@@ -480,19 +471,6 @@ def convert_unix_time(unixtime):
                        2038, if you really are from the future, hello!')
 
     return datetime.utcfromtimestamp(unixtime).strftime('%Y-%m-%d_%H-%M-%S')
-
-
-def convert_time_string(input_string):
-    '''
-    REMOVE
-    Takes a string of the form "Start time: 1553245673000\n" and returns the
-    UNIX time converted to the more human-readable format:
-    "Start time: 2019-03-22_09:07:53"
-    '''
-    time = separate_int(input_string)
-    time[1] = convert_unix_time(time[1])
-    converted_string = ''.join(time)
-    return converted_string
 
 
 # Global variables
@@ -578,7 +556,7 @@ C_TYPES = {'c': 1,
 if __name__ == '__main__':
     source, destination = setup_args()
     header, packet_data = extract_file(source, destination, VERBOSE, DEBUG)
-    
+
 
 
     #write_file(HEADER, DESTINATION, 'header')

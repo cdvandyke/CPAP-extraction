@@ -39,6 +39,31 @@ class TestOpenFile(unittest.TestCase):
             cpap_extraction.open_file('Any file')
 
 
+class TestSetupArgs(unittest.TestCase):
+    def test_normal(self):
+        cpap_extraction.sys.argv = [ "cpap_extraction.py", "inputfile"]
+        input, output_path = cpap_extraction.setup_args()
+        self.assertEqual(input, "inputfile")
+        self.assertEqual(output_path, ".")
+
+    def test_bad_argument(self):
+        """
+        This test puts extra stuff in the output
+        """
+        if False:
+            cpap_extraction.sys.argv = [ "cpap_extraction.py", "inputfile", "output"]
+            with self.assertRaises(SystemExit):
+                cpap_extraction.setup_args()
+
+    def test_flags(self):
+        cpap_extraction.sys.argv = [ "cpap_extraction.py", "-v", "-d", "inputfile", "--destination=output"]
+        input, output_path = cpap_extraction.setup_args()
+        self.assertEqual(input, "inputfile")
+        self.assertEqual(output_path, "output")
+        self.assertTrue(cpap_extraction.VERBOSE)
+        self.assertTrue(cpap_extraction.DEBUG)
+
+
 class TestReadPacket(unittest.TestCase):
     '''
     Tests the read_packet method, which takes two arguments, data_file and
@@ -106,7 +131,7 @@ class TestReadPacket(unittest.TestCase):
             packet = cpap_extraction.read_packet(data_file, delimeter)
 
 
-class TestReadPackets(unittest.TestCase):
+class TestSplitPackets(unittest.TestCase):
     '''
     Tests the split_packets method, which should simply call the split_packet
     method for each packet in a data file.
@@ -230,29 +255,6 @@ class TestConvertUnixTime(unittest.TestCase):
         self.assertEqual(converted_time, 'ERROR: test is invalid\n')
 
 
-class test_convert_time_string(unittest.TestCase):
-    '''
-    Tests the convert_time_string() method, which takes a string of the form
-    "Start time: 1553245673000\n" and returns the UNIX time converted to the
-    more human-readable format: "Start time: 2019-03-22_09:07:53"
-    '''
-
-    def test_normal(self):
-        input_string = 'Start time: 1553245673000\n'
-        converted_string = cpap_extraction.convert_time_string(input_string)
-        self.assertEqual(converted_string, 'Start time: 2019-03-22_09-07-53\n')
-
-class test_separate_int(unittest.TestCase):
-    '''
-    Tests the separate_int() method, which takes a string as an input and
-    returns a tuple of the form (string, int, string)
-    '''
-    def test_normal(self):
-        input_string = 'Test time: 0451 TEST\n'
-        separated_string = cpap_extraction.separate_int(input_string)
-        self.assertEqual(separated_string, ['Test time: ', 451, ' TEST\n'])
-
-
 class TestApplyDateandTime(unittest.TestCase):
 
     def test_type_0_3(self):
@@ -291,6 +293,7 @@ class TestApplyDateandTime(unittest.TestCase):
         output = cpap_extraction.apply_type_and_time(-1, inputf)
         self.assertDictEqual(output, input)
 
+
 class TestFieldOfLength(unittest.TestCase):
     '''
     Tests the "fields_of_length" method
@@ -320,6 +323,7 @@ class TestFieldOfLength(unittest.TestCase):
 
 
 class TestExtractionSystem(unittest.TestCase):
+
     def read_results_file(self, filename):
         results = []
         with open(filename, 'r') as rfile:
@@ -332,6 +336,7 @@ class TestExtractionSystem(unittest.TestCase):
                         results.append(expected)
         return results
 
+
     def test_file_one(self):
         results = self.read_results_file("TestFiles/test_one_result.txt")
         header, packet_data = cpap_extraction.extract_file("TestFiles/test_one.001")
@@ -340,7 +345,7 @@ class TestExtractionSystem(unittest.TestCase):
 
         for packet in packet_data:
             self.assertEqual(str(packet).strip(), results.pop(0))
-            
+
         self.assertTrue(len(results) == 0)
 
 
