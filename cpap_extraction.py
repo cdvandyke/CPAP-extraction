@@ -40,7 +40,11 @@ if sys.version_info < (3,6):
 
 def setup_args():
     '''
-    Sets up command-line arguments
+    Sets up command-line arguments using a ArgumentParser
+    See https://docs.python.org/2/library/argparse.html
+    for details on parsing.
+
+    Paser exits if the arguements are invalid
 
     Attributes
     ----------
@@ -54,10 +58,13 @@ def setup_args():
         If True, tell the user how long the extraction took, how big the SOURCE
         file(s) were, and how big each extracted file(s) is.
 
-    parser : ArgumentParser
-        See https://docs.python.org/2/library/argparse.html
+    Returns
+    -------
+    source : path
+        The binary file to be extracted
 
-    args : Parsed Arguments
+    destination : path
+        The file path of the output file
     '''
     global VERBOSE
     global DEBUG
@@ -80,8 +87,21 @@ def setup_args():
 
 def extract_file(source_file, destination = '.', verbose = False, debug = False ):
     """
-    The global variable loading will need to be changed once presets and config
-    files are enabled.
+    This runs the extraction algorithm as a one call function to run the whole
+    module on a file.
+
+    Parameters
+    ----------
+    source : Path
+        The file to be read
+
+    Returns
+    -------
+    header : Dict
+        The binary files header data
+
+    packet_data: [Array Dict]
+        An array of extracted dictionaries containg packet data
     """
     global VERBOSE
     global DEBUG
@@ -98,27 +118,23 @@ def extract_file(source_file, destination = '.', verbose = False, debug = False 
 
 def open_file(source):
     '''
-    Reads a SOURCE from the users' drive and returns the source as a
+    Reads a source from the users' drive and returns the source as a
     memory copied file. This has the potential to use a lot of memmory if files
     are particularly large but as the largest file we have seen is just over
     500 KiB. This is not a pressing concern.
 
+    Raises Errors if the file does not exist(FileNotFoundError)
+    or is not a binary file (TypeError).
+
     Parameters
     ----------
-    SOURCE : Path
+    source : Path
         The file to be read
-
-    Attributes
-    ----------
-    file : File
-        The read-in file, now stored in memory
-
-    VERBOSE : bool
-        if True, print 'Reading in {SOURCE}'
 
     Returns
     -------
-    File : The read-in file
+    File : BytesIO file
+        An in memory copy of the read-in file.
     '''
 
     if VERBOSE:
@@ -241,14 +257,13 @@ def extract_header(packet):
 
     Returns
     --------
-    A method call to extract_packet, which itself will return a string array
+    header: dict
+        Dictionary of the binary header
 
     Notes
     ------
     Only use this method on packets that you're sure are header packets
     '''
-    global start_time
-
     fields = {'Magic number': 'I',
               'File version': 'H',
               'File type data': 'H',
@@ -267,8 +282,6 @@ def extract_header(packet):
     header["Start time"] = convert_unix_time(header["Start time"])
     header["End time"] = convert_unix_time(header["End time"])
 
-    start_time = header["Start time"]
-
     return header
 
 
@@ -283,36 +296,6 @@ def extract_packet(packet, fields):
 
     fields : The varying data fields that are expected to be found within
              packet
-
-    Attributes
-    ----------
-
-    VERBOSE : bool
-        if True, print 'Extracting {field} from {SOURCE}
-
-    C_TYPES : dictionary {character: int}
-        The keys of this dictionary indicate a c_type, and the values indicate
-        the corresponding size of that c_type. For more info, see
-        https://docs.python.org/3/library/struct.html
-
-    data : String array
-        A String array to be populated with the various fields found in the
-        packet
-
-    field : {string: character}
-        Contains the name of the field (e.g., Start time, machine ID, etc.),
-        and the c_type of that field (e.g., H, I, L, etc.)
-
-    number_of_bytes : int
-        The number of bytes used by the current field, determined by that
-        fields' c_type
-
-    bytes_to_be_extracted : Bytes array
-        The appropriate number of Bytes, taken from packet, to be unpacked
-
-    extracted_line : String
-        The fully extracted line, ready to be appeneded to data.
-        Example: Start Time: 1553245673000
 
     Notes
     --------
@@ -361,8 +344,19 @@ def extract_packet(packet, fields):
 
 def data_from_packets(packets, dict_list = []):
     '''
-    TODO: TEST
     Extracts the data from a packet array.
+
+    Parameters
+    -----------
+    packets: array of binary packets to be extracted
+
+    dict_list: List of all potential extraction patterns for the packets.
+
+    Returns
+    --------
+    data_array: [dict]
+        An list of dictionarys of information extracted from the packets in the
+        same order as the packets.
     '''
     if dict_list == []:
         dict_list = EXTRACTION_FIELDS
@@ -385,8 +379,20 @@ def data_from_packets(packets, dict_list = []):
 
 def field_of_length(length, dict_list):
     '''
-    Retrieves the dictionary of the given size
+    Retrieves the dictionary of the given size for extraction.
+
     The only expected exception sould be a KeyError
+
+    Parameters
+    -----------
+    length: The length of the dictionary in Bytes
+
+    dict_list: List of potential Dictionary
+
+    Returns
+    --------
+    dict: The dictionary from the dict list with corresponding length
+
     '''
     if type(dict_list) is not type([]):
         raise TypeError("Error: the dictionary list must be a list of dictionarys.")
@@ -413,7 +419,17 @@ def field_of_length(length, dict_list):
 def apply_type_and_time(length, packet_data):
     """
     Applys the packet type, sub type and human readable time to the data.
-    Packet data is altered regerdless but the value is returned for readability
+    Packet data is altered regerdless but the value is returned for readability.
+
+    Parameters
+    ----------
+    length: length to calculate packet type and subtype.
+
+    packet_data: extracted packet data
+
+    Returns
+    --------
+    packet_data: changed packet data, the return is not strictly necissary 
     """
     blank = True
     for (field, data) in packet_data.items():
@@ -476,7 +492,6 @@ def convert_unix_time(unixtime):
 # Global variables
 VERBOSE = False
 DEBUG = False
-start_time = 'INVALID START TIME'
 EXTRACTION_FIELDS = [
         # Type 0
             {   'type':'B',
