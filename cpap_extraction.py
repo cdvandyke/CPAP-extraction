@@ -40,7 +40,6 @@ if sys.version_info < (3,6):
 
 def setup_args():
     '''
-    TODO: TEST
     Sets up command-line arguments
 
     Attributes
@@ -378,7 +377,8 @@ def data_from_packets(packets, dict_list = []):
             data_array.append(packet_data)
 
         except KeyError:
-            break
+            if DEBUG:
+                warnings.warn('Packet {} was not extracted'.format(packet))
 
     return data_array
 
