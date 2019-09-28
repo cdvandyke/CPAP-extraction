@@ -3,13 +3,6 @@
 This module will take raw CPAP data as an input, and export it to JSON as an
 output.
 
-Example
--------
-    $ python cpap_extraction.py 38611.000 .
-
-Extracts the raw CPAP data from 38611.000 to a new file called
-38611_extracted.JSON
-
 Attributes
 ----------
 SOURCE : path
@@ -429,7 +422,7 @@ def apply_type_and_time(length, packet_data):
 
     Returns
     --------
-    packet_data: changed packet data, the return is not strictly necissary 
+    packet_data: changed packet data, the return is not strictly necissary
     """
     blank = True
     for (field, data) in packet_data.items():
