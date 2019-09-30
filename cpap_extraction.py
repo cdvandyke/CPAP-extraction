@@ -29,10 +29,10 @@ import argparse                 # For command line arguments
 import os                       # For file IO
 import struct                   # For unpacking binary data
 from datetime import datetime   # For converting UNIX time
+from datetime import timedelta
 import warnings                 # For raising warnings
 import re                       # For ripping unixtimes out of strings
 import sys
-from ctypes import c_uint16
 
 if sys.version_info < (3,6):
     print("""Error Version Python version 3.6 of higher required.\n
@@ -497,21 +497,9 @@ def process_cpap_binary(packets, filehandle):
     Input 
     ----------
     packets: array of dictionaries containing the following info
-        {
-            ptype : 
-            subtype : 
-            seek_pos : 
-            data_type : 
-            no packets :   # number of entries
-            time_1_str : 
-            time_2_str:
-            min_val : 
-            max_val :
-            double 2 :
-        }
     filehandle: rest of data
 
-    Returns : data, n(number of packets that have associated data)
+    Returns : data
     --------
     data - dictonary of dictionaries with the following format
     {
@@ -533,7 +521,6 @@ def process_cpap_binary(packets, filehandle):
     
     '''
     data = {}
-    n = 0
     uint32_ctype = 'I'
     uint32_bytes = C_TYPES.get(uint32_ctype)
     for packet in packets:
@@ -543,7 +530,6 @@ def process_cpap_binary(packets, filehandle):
             ptypeInfo = CPAP_DATA_TYPE.get(ptype, {'stop_times':True,  'ctype':'H',  'name':"Unknown"})
             data_ctype = ptypeInfo['ctype']
             data_bytes = C_TYPES.get(data_ctype)
-            data_ctype = '>' + data_ctype
             data[ptype] = { }
 
             # Read data values
@@ -559,7 +545,7 @@ def process_cpap_binary(packets, filehandle):
                 elif val < packet['Min Val']:
                     val+=256
                 data_vals.append(val)
-            data[ptype]["data_vals"] = data_vals
+            packet["data_vals"] = data_vals
             # Read stop times
             data_vals = []
             if ptypeInfo['stop_times']:
@@ -569,11 +555,10 @@ def process_cpap_binary(packets, filehandle):
                     extracted_data = int.from_bytes(read_bytes[1:], byteorder='little')
                     # divide time by 1000 to get to seconds
                     data_vals.append(extracted_data/1000)
-            data[ptype]["stop_times"] = data_vals
-            n += 1
-    return data, n
+            packet["stop_times"] = data_vals
+    return packets
 
-def decompress_data(all_data):
+def decompress_data(all_data, header):
     '''
     decompresses data
 
@@ -582,23 +567,56 @@ def decompress_data(all_data):
     '''
     # TODO get config file to determine desired data to be decompressed
     # For right now, all we want is waveform -- cpap type 4352
-
-    raw_data = {}
     # ptypes to be decompressed
-    desired = [4352]
+    desired = [4352, 4356, 4355]
+    microInSec = 1000000
+    raw_data = {}
+    sessionStart = datetime.strptime(header['Start time'], '%Y-%m-%d_%H-%M-%S')
+    sessionEnd = datetime.strptime(header['End time'], '%Y-%m-%d_%H-%M-%S')
+    # Decompress each type desired data type
     for type in desired:
         ptype_info = CPAP_DATA_TYPE.get(type, {'stop_times':True,  'ctype':'H',  'name':"Unknown"})
-        counter = 0
-        type_data = all_data[type]
+        ptype_data = [d for d in all_data if d['Data type'] == type][0]
+        try:
+            ptype_start = datetime.strptime(ptype_data['time 1'], '%Y-%m-%d_%H-%M-%S')
+            ptype_end = datetime.strptime(ptype_data['time 2'], '%Y-%m-%d_%H-%M-%S')
+        except:
+            print("No start or end time for", type)
+            continue
         decomp_data = []
+        time_tags = []
+        interval = ptype_info["interval"]
+
+        # create stop times if none
         if not ptype_info['stop_times']:
-            interval = ptype_info["interval"]
-            type_data['stop_times'] = [(j+1)*interval for j in range(len(type_data['data_vals']))]
-        for stop, val in zip(type_data["stop_times"], type_data["data_vals"]):
-            for i in range(counter,stop):
+            ptype_data['stop_times'] = [(j+1)*interval for j in range(len(ptype_data['data_vals']))]
+
+        # pre fill empty values up until data start
+        intervalStep = int(interval * microInSec)
+        for sec in range(int(((ptype_start - sessionStart).seconds-1)/interval)):
+            decomp_data.append("")
+            time = ptype_start+timedelta(microseconds=sec/interval*microInSec)
+            time_tags.append(time.strftime('%m-%d-%y_%H:%M:%S.%f'))
+
+        # match data with time tags
+        interBegin = (sessionStart - datetime.min).seconds*microInSec + (sessionStart - datetime.min).microseconds
+        counterMicroSec = interBegin
+        for stop, val in zip(ptype_data["stop_times"], ptype_data["data_vals"]):
+            intervalEnd = int(interBegin + microInSec*stop)
+            for i in range(counterMicroSec,intervalEnd, intervalStep):
+                time = ptype_start + timedelta(microseconds=i)
+                time_tags.append(time.strftime('%m-%d-%y_%H:%M:%S.%f'))
                 decomp_data.append(val)
-            counter = stop
-        raw_data[type] = decomp_data
+            counterMicroSec = intervalEnd
+
+        # post fill empty values until data end
+        for sec in range(int((sessionEnd - ptype_end).seconds/interval)-1):
+            time = ptype_start + timedelta(microseconds=sec / interval * microInSec)
+            time_tags.append(time.strftime('%m-%d-%y_%H:%M:%S.%f'))
+            decomp_data.append("")
+
+        raw_data[CPAP_DATA_TYPE[type]["name"]] = {"Times"  : time_tags,
+                                                "Values" : decomp_data}
     return raw_data
 
 
@@ -684,29 +702,29 @@ C_TYPES = {'c': 1,
            }
 
 CPAP_DATA_TYPE = {# bool if stop times included, associated ctype for data vals, name of data
-    4097 : {'stop_times':True,  'ctype':'H',  'name':"Clear Airway Apneas event"}, # (#13 and time offset for each event)
-    4098 : {'stop_times':True,  'ctype':'H',  'name':"Obstructive Apnea"}, # (#15 and time offset for each event
-    4099 : {'stop_times':True,  'ctype':'H',  'name':"Hypopneas"}, # events per hour
-    4102 : {'stop_times':True,  'ctype':'H',  'name':"RERA"},
-    4103 : {'stop_times':True,  'ctype':'H',  'name':"Vibratory Snore"}, # events per hour
-    4104 : {'stop_times':True,  'ctype':'H',  'name':"System One (+DM) Vib snore event"}, # #1 and time
-    4105 : {'stop_times':True,  'ctype':'H',  'name':"Pressure Pulse"},
-    4136 : {'stop_times':True,  'ctype':'H',  'name':"Unknown"},
-    4352 : {'stop_times':False, 'ctype':'h',  'name':"Breathing Flow Rate Waveform", 'interval':60}, # (L/min)
-    4355 : {'stop_times':True,  'ctype':'H',  'name':"Tidal Volume"}, # (*20 for ml/min)
-    4356 : {'stop_times':True,  'ctype':'H',  'name':"Snore Volume"}, # (snores per some unit of time)
-    4357 : {'stop_times':True,  'ctype':'H',  'name':"Minute Ventilation"}, # (divide by 8 to get L)
-    4358 : {'stop_times':True,  'ctype':'H',  'name':"Respiratory Rate"}, # (BPM)
-    4360 : {'stop_times':True,  'ctype':'H',  'name':"Rate of detected mask leakage"}, # (L/min) units good
-    4362 : {'stop_times':True,  'ctype':'H',  'name':"Expiratory Time"}, # (Sec)
-    4363 : {'stop_times':True,  'ctype':'H',  'name':"Inspiratory Time"}, # (Sec)
-    4364 : {'stop_times':True,  'ctype':'H',  'name':"Unknown"},
-    4366 : {'stop_times':True,  'ctype':'H',  'name':"Unknown"},
-    4374 : {'stop_times':True,  'ctype':'H',  'name':"AHI"},
-    4375 : {'stop_times':True,  'ctype':'H',  'name':"Total Leak Rate (L/min)"},
-    4377 : {'stop_times':True,  'ctype':'H',  'name':"Respiration Disturbance Rate"},
-    4439 : {'stop_times':True,  'ctype':'H',  'name':"Unknown"},
-    4440 : {'stop_times':True,  'ctype':'H',  'name':"Unknown"}
+    4097 : {'stop_times':True,  'ctype':'H', 'interval':1.0, 'name':"Clear Airway Apneas event"}, # (#13 and time offset for each event)
+    4098 : {'stop_times':True,  'ctype':'H', 'interval':1.0, 'name':"Obstructive Apnea"}, # (#15 and time offset for each event
+    4099 : {'stop_times':True,  'ctype':'H', 'interval':1.0, 'name':"Hypopneas"}, # events per hour
+    4102 : {'stop_times':True,  'ctype':'H', 'interval':1.0, 'name':"RERA"},
+    4103 : {'stop_times':True,  'ctype':'H', 'interval':1.0, 'name':"Vibratory Snore"}, # events per hour
+    4104 : {'stop_times':True,  'ctype':'H', 'interval':1.0, 'name':"System One (+DM) Vib snore event"}, # #1 and time
+    4105 : {'stop_times':True,  'ctype':'H', 'interval':1.0, 'name':"Pressure Pulse"},
+    4136 : {'stop_times':True,  'ctype':'H', 'interval':1.0, 'name':"Unknown"},
+    4352 : {'stop_times':False, 'ctype':'h', 'interval':0.2, 'name':"Breathing Flow Rate Waveform"}, # (L/min)
+    4355 : {'stop_times':True,  'ctype':'H', 'interval':1.0, 'name':"Tidal Volume"}, # (*20 for ml/min)
+    4356 : {'stop_times':True,  'ctype':'H', 'interval':1.0, 'name':"Snore Volume"}, # (snores per some unit of time)
+    4357 : {'stop_times':True,  'ctype':'H', 'interval':1.0, 'name':"Minute Ventilation"}, # (divide by 8 to get L)
+    4358 : {'stop_times':True,  'ctype':'H', 'interval':1.0, 'name':"Respiratory Rate"}, # (BPM)
+    4360 : {'stop_times':True,  'ctype':'H', 'interval':1.0, 'name':"Rate of detected mask leakage"}, # (L/min) units good
+    4362 : {'stop_times':True,  'ctype':'H', 'interval':1.0, 'name':"Expiratory Time"}, # (Sec)
+    4363 : {'stop_times':True,  'ctype':'H', 'interval':1.0, 'name':"Inspiratory Time"}, # (Sec)
+    4364 : {'stop_times':True,  'ctype':'H', 'interval':1.0, 'name':"Unknown"},
+    4366 : {'stop_times':True,  'ctype':'H', 'interval':1.0, 'name':"Unknown"},
+    4374 : {'stop_times':True,  'ctype':'H', 'interval':1.0, 'name':"AHI"},
+    4375 : {'stop_times':True,  'ctype':'H', 'interval':1.0, 'name':"Total Leak Rate (L/min)"},
+    4377 : {'stop_times':True,  'ctype':'H', 'interval':1.0, 'name':"Respiration Disturbance Rate"},
+    4439 : {'stop_times':True,  'ctype':'H', 'interval':1.0, 'name':"Unknown"},
+    4440 : {'stop_times':True,  'ctype':'H', 'interval':1.0, 'name':"Unknown"}
 }
 
 
@@ -718,7 +736,8 @@ if __name__ == '__main__':
     PACKETS = read_packets(DATA_FILE, PACKET_DELIMETER)
     header = extract_header(PACKETS[0])
     data = data_from_packets(PACKETS)
-    processed_data, n = process_cpap_binary(data, DATA_FILE)
-    raw = decompress_data(processed_data)
+    data = process_cpap_binary(data, DATA_FILE)
+    raw = decompress_data(data, header)
     print()
+
 
