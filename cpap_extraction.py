@@ -66,14 +66,14 @@ def setup_args():
     global DEBUG
 
     parser = argparse.ArgumentParser(description='CPAP_data_extraction')
-    parser.add_argument('--source', nargs=1, default='000008aa.001', help='path to CPAP data')
+    parser.add_argument('source', nargs=1, default='000008aa.001', help='path to CPAP data')
     parser.add_argument('--destination', nargs=1, default='.',
                         help='path to place extracted files')
     parser.add_argument('-v', action='store_true', help='be VERBOSE')
     parser.add_argument('-d', action='store_true', help='debug mode')
 
     args = parser.parse_args()
-    SOURCE = args.source
+    (SOURCE,) = args.source
     (DESTINATION,) = args.destination
     VERBOSE = args.v
     DEBUG = args.d
@@ -489,12 +489,12 @@ def twos(num):
 
 def process_cpap_binary(packets, filehandle):
     '''
-    parses file in order to determine 
+    parses file in order to determine
         -order of data/data type
         -the data
         -data start and stop times for decompressing
 
-    Input 
+    Input
     ----------
     packets: array of dictionaries containing the following info
     filehandle: rest of data
@@ -504,21 +504,21 @@ def process_cpap_binary(packets, filehandle):
     data - dictonary of dictionaries with the following format
     {
         (data type int) : {
-                        no packets : 
-                        values : 
-                        stop_times : 
+                        no packets :
+                        values :
+                        stop_times :
                         }
 
         (data type int) : {
-                        no packets : 
-                        values : 
-                        stop_times : 
+                        no packets :
+                        values :
+                        stop_times :
                         }
     }
 
     Notes
     ------
-    
+
     '''
     data = {}
     uint32_ctype = 'I'
@@ -739,5 +739,3 @@ if __name__ == '__main__':
     data = process_cpap_binary(data, DATA_FILE)
     raw = decompress_data(data, header)
     print()
-
-
