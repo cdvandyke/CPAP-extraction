@@ -22,10 +22,11 @@ import argparse                 # For command line arguments
 import os                       # For file IO
 import io
 import struct                   # For unpacking binary data
-from datetime import datetime   # For converting UNIX time
+from datetime import datetime, timedelta   # For converting UNIX time
 import warnings                 # For raising warnings
 import re                       # For ripping unixtimes out of strings
 import sys
+
 if sys.version_info < (3,6):
     print("""Error Version Python version 3.6 of higher required.\n
     If you are on python 4 this is untested, as python 4 does not yet exist.""")
@@ -171,8 +172,9 @@ def split_packets(input_file, delimeter = b'\xff\xff\xff\xff'):
     '''
     packet_array = []
     while True:
+        pos = input_file.tell()
         packet = read_packet(input_file, delimeter)
-        if packet == b'':
+        if packet == b'' or len(packet) > 444:
             break
         packet_array.append(packet)
 
@@ -482,6 +484,149 @@ def convert_unix_time(unixtime):
     return datetime.utcfromtimestamp(unixtime).strftime('%Y-%m-%d_%H-%M-%S')
 
 
+def twos(num):
+    '''
+    gets the two compliment of input number
+    '''
+    bits = num.bit_length()
+    compliment = num - (1 << bits)
+    return compliment
+
+
+def process_cpap_binary(packets, filehandle):
+    '''
+    parses file in order to determine
+        -order of data/data type
+        -the data
+        -data start and stop times for decompressing
+
+    Input
+    ----------
+    packets: array of dictionaries containing the following info
+    filehandle: rest of data
+
+    Returns : data
+    --------
+    data - dictonary of dictionaries with the following format
+    {
+        (data type int) : {
+                        no packets :
+                        values :
+                        stop_times :
+                        }
+
+        (data type int) : {
+                        no packets :
+                        values :
+                        stop_times :
+                        }
+    }
+
+    Notes
+    ------
+
+    '''
+    data = {}
+    uint32_ctype = 'I'
+    uint32_bytes = C_TYPES.get(uint32_ctype)
+    for packet in packets:
+        # check if there is associated data
+        if packet["no packets"] > 0:
+            ptype = packet["Data type"]
+            ptypeInfo = CPAP_DATA_TYPE.get(ptype, {'stop_times':True,  'ctype':'H',  'name':"Unknown"})
+            data_ctype = ptypeInfo['ctype']
+            data_bytes = C_TYPES.get(data_ctype)
+            data[ptype] = { }
+
+            # Read data values
+            data_vals = []
+            gain = packet["double 2"]
+            for _ in range(packet["no entries"]):
+                read_bytes = filehandle.read(data_bytes)
+                #(extracted_data,) = struct.unpack(data_ctype, read_bytes)
+                extracted_data = int.from_bytes(read_bytes, byteorder='big', signed=True)
+                val = round(extracted_data*gain, 3)
+                if val > packet['Max Val']:
+                    val = twos(int(val))
+                elif val < packet['Min Val']:
+                    val+=256
+                data_vals.append(val)
+            packet["data_vals"] = data_vals
+            # Read stop times
+            data_vals = []
+            if ptypeInfo['stop_times']:
+                for _ in range(packet["no entries"]):
+                    read_bytes = filehandle.read(uint32_bytes)
+                    # ignore padding byte
+                    extracted_data = int.from_bytes(read_bytes[1:], byteorder='little')
+                    # divide time by 1000 to get to seconds
+                    data_vals.append(extracted_data/1000)
+            packet["stop_times"] = data_vals
+    return packets
+
+def decompress_data(all_data, header):
+    '''
+    decompresses data
+
+    Input : all_data -- output from process_cpap_binary
+    Output : raw_data -- dictionary key = cpap string type, value = list of values
+    '''
+    # TODO get config file to determine desired data to be decompressed
+    # For right now, all we want is waveform -- cpap type 4352
+    # ptypes to be decompressed
+    desired = [4352, 4356, 4355]
+    microInSec = 1000000
+    raw_data = {}
+    sessionStart = datetime.strptime(header['Start time'], '%Y-%m-%d_%H-%M-%S')
+    sessionEnd = datetime.strptime(header['End time'], '%Y-%m-%d_%H-%M-%S')
+    # Decompress each type desired data type
+    for type in desired:
+        ptype_info = CPAP_DATA_TYPE.get(type, {'stop_times':True,  'ctype':'H',  'name':"Unknown"})
+        ptype_data = [d for d in all_data if d['Data type'] == type][0]
+        try:
+            ptype_start = datetime.strptime(ptype_data['time 1'], '%Y-%m-%d_%H-%M-%S')
+            ptype_end = datetime.strptime(ptype_data['time 2'], '%Y-%m-%d_%H-%M-%S')
+        except:
+            print("No start or end time for", type)
+            continue
+        decomp_data = []
+        time_tags = []
+        interval = ptype_info["interval"]
+
+        # create stop times if none
+        if not ptype_info['stop_times']:
+            ptype_data['stop_times'] = [(j+1)*interval for j in range(len(ptype_data['data_vals']))]
+
+        # pre fill empty values up until data start
+        intervalStep = int(interval * microInSec)
+        for sec in range(int(((ptype_start - sessionStart).seconds-1)/interval)):
+            decomp_data.append("")
+            time = ptype_start+timedelta(microseconds=sec/interval*microInSec)
+            time_tags.append(time.strftime('%m-%d-%y_%H:%M:%S.%f'))
+
+        # match data with time tags
+        interBegin = (sessionStart - datetime.min).seconds*microInSec + (sessionStart - datetime.min).microseconds
+        counterMicroSec = interBegin
+        for stop, val in zip(ptype_data["stop_times"], ptype_data["data_vals"]):
+            intervalEnd = int(interBegin + microInSec*stop)
+            for i in range(counterMicroSec,intervalEnd, intervalStep):
+                time = ptype_start + timedelta(microseconds=i)
+                time_tags.append(time.strftime('%m-%d-%y_%H:%M:%S.%f'))
+                decomp_data.append(val)
+            counterMicroSec = intervalEnd
+
+        # post fill empty values until data end
+        for sec in range(int((sessionEnd - ptype_end).seconds/interval)-1):
+            time = ptype_start + timedelta(microseconds=sec / interval * microInSec)
+            time_tags.append(time.strftime('%m-%d-%y_%H:%M:%S.%f'))
+            decomp_data.append("")
+
+        raw_data[CPAP_DATA_TYPE[type]["name"]] = {"Times"  : time_tags,
+                                                "Values" : decomp_data}
+    return raw_data
+
+
+
 # Global variables
 VERBOSE = False
 DEBUG = False
@@ -557,14 +702,44 @@ C_TYPES = {'c': 1,
            'q': 8,
            'Q': 8,
            'f': 4,
-           'd': 8}
+           'd': 8
+           }
 
+CPAP_DATA_TYPE = {# bool if stop times included, associated ctype for data vals, name of data
+    4097 : {'stop_times':True,  'ctype':'H', 'interval':1.0, 'name':"Clear Airway Apneas event"}, # (#13 and time offset for each event)
+    4098 : {'stop_times':True,  'ctype':'H', 'interval':1.0, 'name':"Obstructive Apnea"}, # (#15 and time offset for each event
+    4099 : {'stop_times':True,  'ctype':'H', 'interval':1.0, 'name':"Hypopneas"}, # events per hour
+    4102 : {'stop_times':True,  'ctype':'H', 'interval':1.0, 'name':"RERA"},
+    4103 : {'stop_times':True,  'ctype':'H', 'interval':1.0, 'name':"Vibratory Snore"}, # events per hour
+    4104 : {'stop_times':True,  'ctype':'H', 'interval':1.0, 'name':"System One (+DM) Vib snore event"}, # #1 and time
+    4105 : {'stop_times':True,  'ctype':'H', 'interval':1.0, 'name':"Pressure Pulse"},
+    4136 : {'stop_times':True,  'ctype':'H', 'interval':1.0, 'name':"Unknown"},
+    4352 : {'stop_times':False, 'ctype':'h', 'interval':0.2, 'name':"Breathing Flow Rate Waveform"}, # (L/min)
+    4355 : {'stop_times':True,  'ctype':'H', 'interval':1.0, 'name':"Tidal Volume"}, # (*20 for ml/min)
+    4356 : {'stop_times':True,  'ctype':'H', 'interval':1.0, 'name':"Snore Volume"}, # (snores per some unit of time)
+    4357 : {'stop_times':True,  'ctype':'H', 'interval':1.0, 'name':"Minute Ventilation"}, # (divide by 8 to get L)
+    4358 : {'stop_times':True,  'ctype':'H', 'interval':1.0, 'name':"Respiratory Rate"}, # (BPM)
+    4360 : {'stop_times':True,  'ctype':'H', 'interval':1.0, 'name':"Rate of detected mask leakage"}, # (L/min) units good
+    4362 : {'stop_times':True,  'ctype':'H', 'interval':1.0, 'name':"Expiratory Time"}, # (Sec)
+    4363 : {'stop_times':True,  'ctype':'H', 'interval':1.0, 'name':"Inspiratory Time"}, # (Sec)
+    4364 : {'stop_times':True,  'ctype':'H', 'interval':1.0, 'name':"Unknown"},
+    4366 : {'stop_times':True,  'ctype':'H', 'interval':1.0, 'name':"Unknown"},
+    4374 : {'stop_times':True,  'ctype':'H', 'interval':1.0, 'name':"AHI"},
+    4375 : {'stop_times':True,  'ctype':'H', 'interval':1.0, 'name':"Total Leak Rate (L/min)"},
+    4377 : {'stop_times':True,  'ctype':'H', 'interval':1.0, 'name':"Respiration Disturbance Rate"},
+    4439 : {'stop_times':True,  'ctype':'H', 'interval':1.0, 'name':"Unknown"},
+    4440 : {'stop_times':True,  'ctype':'H', 'interval':1.0, 'name':"Unknown"}
+}
 
 
 if __name__ == '__main__':
     source, destination = setup_args()
-    header, packet_data = extract_file(source, destination, VERBOSE, DEBUG)
 
-
-
-    #write_file(HEADER, DESTINATION, 'header')
+    DATA_FILE = open_file(source)
+    PACKET_DELIMETER = b'\xff\xff\xff\xff'
+    PACKETS = split_packets(DATA_FILE, PACKET_DELIMETER)
+    header = extract_header(PACKETS[0])
+    data = data_from_packets(PACKETS)
+    data = process_cpap_binary(data, DATA_FILE)
+    raw = decompress_data(data, header)
+    print()
