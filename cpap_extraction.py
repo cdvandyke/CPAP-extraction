@@ -175,6 +175,7 @@ def split_packets(input_file, delimeter = b'\xff\xff\xff\xff'):
         pos = input_file.tell()
         packet = read_packet(input_file, delimeter)
         if packet == b'' or len(packet) > 444:
+            input_file.seek(pos)
             break
         packet_array.append(packet)
 
@@ -183,17 +184,8 @@ def split_packets(input_file, delimeter = b'\xff\xff\xff\xff'):
 
 def read_packet(input_file, delimeter):
     '''
-    Packets are sepearted using a delimeter, the .001 files, for example, use
-    \xff\xff\xff\xff as their delimeter. This packet reads and returns all data
-    stored in input_file up to delimeter. The data are stored with varrying
-    length, some data fields are a single byte, some are 16 bytes. Because of
-    this, even if we know the delimeter is four bytes, we cannot read the data
-    file four bytes at a time. We must instead read one byte at a time. Once
-    each byte is read in, this method checks if that byte is the first part of
-    the delimeter. If it isn't, the byte is appended to packet. If it is, this
-    method seeks back one byte, then checks if the next bytes match the
-    delimeter, if they do, the packet is completely read, so this method
-    returns. TODO: Make this explanation less terrible.
+    The packets are seperated but due to uneven packet length the input file
+    must be read one byte at a time.
 
     Parameters
     ----------
@@ -292,19 +284,10 @@ def extract_packet(packet, fields):
     fields : The varying data fields that are expected to be found within
              packet
 
-    Notes
-    --------
-    Once the bytes from packet are correctly read and appended to data, they
-    are removed from packet. This is simply to make parsing the data cleaner
-
-    All the data are little endian, struct.unpack() expects a '<' before the
-    c_type to specifiy if the Bytes are little endian, which is why a '<' is
-    prepended to the c_type
-
-    struct.unpack() returns a tuple, using (extracted_line,) = struct.unpack()
-    automatically returns the unpacked tuple.
-    https://stackoverflow.com/questions/13894350/what-does-the-comma-mean-in-pythons-unpack#13894363
-
+    Note
+    ----
+    struct.unpack() expects a '<' before the c_type to specifiy if the Bytes
+    are little endian, which is why a '<' is prepended to the c_type
 
     Returns
     -------
@@ -567,14 +550,12 @@ def process_cpap_binary(packets, filehandle):
 def decompress_data(all_data, header):
     '''
     decompresses data
-
     Input : all_data -- output from process_cpap_binary
-    Output : raw_data -- dictionary key = cpap string type, value = list of values
+    Output : raw_data -- dictionary key = cpap string type, value = {'Values' : values, "Times": times
     '''
     # TODO get config file to determine desired data to be decompressed
-    # For right now, all we want is waveform -- cpap type 4352
     # ptypes to be decompressed
-    desired = [4352, 4356, 4355]
+    desired = [4352, 4356]
     microInSec = 1000000
     raw_data = {}
     sessionStart = datetime.strptime(header['Start time'], '%Y-%m-%d_%H-%M-%S')
@@ -734,7 +715,6 @@ CPAP_DATA_TYPE = {# bool if stop times included, associated ctype for data vals,
 
 if __name__ == '__main__':
     source, destination = setup_args()
-
     DATA_FILE = open_file(source)
     PACKET_DELIMETER = b'\xff\xff\xff\xff'
     PACKETS = split_packets(DATA_FILE, PACKET_DELIMETER)
@@ -742,4 +722,8 @@ if __name__ == '__main__':
     data = data_from_packets(PACKETS)
     data = process_cpap_binary(data, DATA_FILE)
     raw = decompress_data(data, header)
-    print()
+    with open("test.txt", 'w') as file:
+        file.write(str(raw))
+        file.write(str(header))
+        file.write(str(data))
+    exit()
