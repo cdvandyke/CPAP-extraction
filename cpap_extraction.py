@@ -563,10 +563,9 @@ def decompress_data(all_data, header):
     decompresses data
 
     Input : all_data -- output from process_cpap_binary
-    Output : raw_data -- dictionary key = cpap string type, value = list of values
+    Output : raw_data -- dictionary key = cpap string type, value = {'Values' : values, "Times": times
     '''
     # TODO get config file to determine desired data to be decompressed
-    # For right now, all we want is waveform -- cpap type 4352
     # ptypes to be decompressed
     desired = [4352, 4356, 4355]
     microInSec = 1000000
