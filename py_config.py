@@ -6,33 +6,57 @@ import json
 import tempfile
 import warnings                 # For raising warnings
 
-class settings():
+class config(dict):
 
-    def __init__(self, location = ""):
-        self.location = path
-        self.values = {}
+    def __init__(self, *args, **kwargs):
+        self.location = ""
+        self.name = ""
+        super().__init__(*args, **kwargs)
 
-        if not path.isfile(location):
-            self.default_save_location()
-            warnings.warn("""The config file is not currently set up,
-                        upon saving the config file will be saved at
-                        {}.""".format(self.location))
-        else:
-            self.location = path
-            self.load()
+    def load(self, name = "", location = ""):
+        self.set_file_path(name , location)
 
-    def load(self):
+        if not self.file_exists():
+            warnings.warn("File {} not found, no configuration loaded.".format(self.fullpath()))
+            return
+
         with open(self.location, 'r') as file:
             s = file.read()
-            dictionary = json.loads(s)
-            self.values = dictionary
+
+        dictionary = json.loads(s)
+        self.update(dictionary)
+
+    def fullpath(self):
+        return path.join(self.location, self.name)
+
+    def set_file_path(self, location = "", name = ""):
+        self.set_directory(location)
+        self.set_filename(name)
+
+    def set_directory(self, location):
+        if path.isdir(location):
+            self.location = location
+        elif location == "temp":
+            self.location = tempfile.gettempdir()
+        else:
+            self.location = path.abspath()
+
+    def set_filename(self, name = ""):
+        if name == "":
+            self.name = "cpap_config.json"
+
+        nameparts = name.split(".")
+        if nameparts[-1] != "json":
+            newname = ".".join(nameparts[:-1])
+            self.name = "{}.{}".format(nameparts[0],"json")
+            warnings.warn("""File name '{}' is not a json file,
+                    file will be renamed as {}""".format(name, self.name))
+        else name:
+            self.name = name
 
     def save(self):
-        with open(self.location, 'w') as file:
-            json.dump(self.values, file, True)
-
-    def default_save_location(self):
-        self.location = path.join(tempfile.gettempdir(), "cpap_config.json")
-
-    def get_values(self):
-        return copy(self.values)
+        try :
+            with open(self.fullpath(),'w') as file:
+                json.dump(self, file)
+        except:
+            warnings.warn("Error: Configuration not saved")
