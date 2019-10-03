@@ -1,0 +1,10 @@
+{
+  "Savepath": "somepath",
+  "loadpath": "loadsomepath",
+  "as_dir": true,
+  "data types": [
+    455,
+    345,
+    1234
+  ]
+}
