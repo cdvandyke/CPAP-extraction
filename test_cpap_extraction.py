@@ -283,7 +283,10 @@ class TestConvertUnixTime(unittest.TestCase):
 
 
 class TestApplyDateandTime(unittest.TestCase):
-
+    """
+        This tests applying the date and time to a dictionary.
+        As well as correctly addressing the packet type
+    """
     def test_type_0_3(self):
         expected_output = {'type': 0, 'time 1': '2019-03-01_08-28-46', 'time 2': '2019-03-01_11-54-15', 'no entries': 207, 'field 2': 1, 'subtype': 3}
         input = {'type': 0, 'time 1': 1551428926000, 'time 2': 1551441255000, 'no entries': 207, 'field 2': 1}
@@ -350,7 +353,9 @@ class TestFieldOfLength(unittest.TestCase):
 
 
 class TestExtractionSystem(unittest.TestCase):
-
+    """
+        This is designed a wholistic system test.
+    """
     def read_results_file(self, filename):
         results = []
         with open(filename, 'r') as rfile:
