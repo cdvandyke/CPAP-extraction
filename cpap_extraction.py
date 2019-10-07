@@ -3,13 +3,6 @@
 This module will take raw CPAP data as an input, and export it to JSON as an
 output.
 
-Example
--------
-    $ python cpap_extraction.py 38611.000 .
-
-Extracts the raw CPAP data from 38611.000 to a new file called
-38611_extracted.JSON
-
 Attributes
 ----------
 SOURCE : path
@@ -27,11 +20,13 @@ VERBOSE : bool
 '''
 import argparse                 # For command line arguments
 import os                       # For file IO
+import io
 import struct                   # For unpacking binary data
-from datetime import datetime   # For converting UNIX time
+from datetime import datetime, timedelta   # For converting UNIX time
 import warnings                 # For raising warnings
 import re                       # For ripping unixtimes out of strings
 import sys
+
 if sys.version_info < (3,6):
     print("""Error Version Python version 3.6 of higher required.\n
     If you are on python 4 this is untested, as python 4 does not yet exist.""")
@@ -39,7 +34,11 @@ if sys.version_info < (3,6):
 
 def setup_args():
     '''
-    Sets up command-line arguments
+    Sets up command-line arguments using a ArgumentParser
+    See https://docs.python.org/2/library/argparse.html
+    for details on parsing.
+
+    Paser exits if the arguements are invalid
 
     Attributes
     ----------
@@ -53,13 +52,14 @@ def setup_args():
         If True, tell the user how long the extraction took, how big the SOURCE
         file(s) were, and how big each extracted file(s) is.
 
-    parser : ArgumentParser
-        See https://docs.python.org/2/library/argparse.html
+    Returns
+    -------
+    source : path
+        The binary file to be extracted
 
-    args : Parsed Arguments
+    destination : path
+        The file path of the output file
     '''
-    global SOURCE
-    global DESTINATION
     global VERBOSE
     global DEBUG
 
@@ -71,32 +71,64 @@ def setup_args():
     parser.add_argument('-d', action='store_true', help='debug mode')
 
     args = parser.parse_args()
-    (SOURCE,) = args.source
-    (DESTINATION,) = args.destination
+    source = args.source[0]
+    destination = args.destination[0]
     VERBOSE = args.v
     DEBUG = args.d
+
+    return source, destination
+
+
+def extract_file(source_file, destination = '.', verbose = False, debug = False ):
+    """
+    This runs the extraction algorithm as a one call function to run the whole
+    module on a file.
+
+    Parameters
+    ----------
+    source : Path
+        The file to be read
+
+    Returns
+    -------
+    header : Dict
+        The binary files header data
+
+    packet_data: [Array Dict]
+        An array of extracted dictionaries containg packet data
+    """
+    global VERBOSE
+    global DEBUG
+    VERBOSE = verbose
+    DEBUG = debug
+
+    data_file = open_file(source_file)
+    packets = split_packets(data_file)
+    header = extract_header(packets[0])
+    packet_data = data_from_packets(packets)
+
+    return header, packet_data
 
 
 def open_file(source):
     '''
-    Reads a SOURCE from the users' drive and returns the source as File
+    Reads a source from the users' drive and returns the source as a
+    memory copied file. This has the potential to use a lot of memmory if files
+    are particularly large but as the largest file we have seen is just over
+    500 KiB. This is not a pressing concern.
+
+    Raises Errors if the file does not exist(FileNotFoundError)
+    or is not a binary file (TypeError).
 
     Parameters
     ----------
-    SOURCE : Path
+    source : Path
         The file to be read
-
-    Attributes
-    ----------
-    file : File
-        The read-in file, now stored in memory
-
-    VERBOSE : bool
-        if True, print 'Reading in {SOURCE}'
 
     Returns
     -------
-    File : The read-in file
+    File : BytesIO file
+        An in memory copy of the read-in file.
     '''
 
     if VERBOSE:
@@ -104,25 +136,56 @@ def open_file(source):
 
     if not os.path.isfile(source):
         raise FileNotFoundError(
-            'ERROR: source file {} not found!'.format(SOURCE))
+            'ERROR: source file {} not found!'.format(source))
 
-    opened_file = open(source, 'rb')
-    return opened_file
+    with open(source, 'rb') as file:
+        binary_data = file.read()
+
+    try:
+        return io.BytesIO( binary_data)
+    except TypeError:
+        raise TypeError("ERROR: source file {} is not a binary file.".format(source))
+
+
+def split_packets(input_file, delimeter = b'\xff\xff\xff\xff'):
+    '''
+    Using the read_packet method, returns all packet_array found in input_file
+    in an array of packet_array.
+
+    Paramters
+    ---------
+    input_file : File
+        A file object created by read_file(), this object contains the data
+        packet_array to be read
+
+    delimeter : bytes
+        The 'separator' of the packet_array in input_file. For .001 files, the
+        delimeter is b'\xff\xff\xff\xff'
+
+    Attributes
+    ----------
+    packet : bytes
+        The packet returned by read_packet
+
+    packet_array : Array <packets>
+        The packet array to be returned
+    '''
+    packet_array = []
+    while True:
+        pos = input_file.tell()
+        packet = read_packet(input_file, delimeter)
+        if packet == b'' or len(packet) > 444:
+            input_file.seek(pos)
+            break
+        packet_array.append(packet)
+
+    return packet_array
 
 
 def read_packet(input_file, delimeter):
     '''
-    Packets are sepearted using a delimeter, the .001 files, for example, use
-    \xff\xff\xff\xff as their delimeter. This packet reads and returns all data
-    stored in input_file up to delimeter. The data are stored with varrying
-    length, some data fields are a single byte, some are 16 bytes. Because of
-    this, even if we know the delimeter is four bytes, we cannot read the data
-    file four bytes at a time. We must instead read one byte at a time. Once
-    each byte is read in, this method checks if that byte is the first part of
-    the delimeter. If it isn't, the byte is appended to packet. If it is, this
-    method seeks back one byte, then checks if the next bytes match the
-    delimeter, if they do, the packet is completely read, so this method
-    returns. TODO: Make this explanation less terrible.
+    The packets are seperated but due to uneven packet length the input file
+    must be read one byte at a time.
 
     Parameters
     ----------
@@ -167,37 +230,46 @@ def read_packet(input_file, delimeter):
     return bytearray(packet)
 
 
-def read_packets(input_file, delimeter):
+def extract_header(packet):
     '''
-    Using the read_packet method, returns all packet_array found in input_file
-    in an array of packet_array.
-
-    Paramters
-    ---------
-    input_file : File
-        A file object created by read_file(), this object contains the data
-        packet_array to be read
-
-    delimeter : bytes
-        The 'separator' of the packet_array in input_file. For .001 files, the
-        delimeter is b'\xff\xff\xff\xff'
+    TODO: Test
+    Uses extract_packet to extract the header information from a packet.
 
     Attributes
     ----------
-    packet : bytes
-        The packet returned by read_packet
+    fields : Dictionary {Field name: c_type}
+        A dictionary containing the various fields found in a header packet,
+        along with their corresponding c_type, which determines the number of
+        bytes that fiels uses. See the C_TYPES dictionary.
 
-    packet_array : Array <packets>
-        The packet array to be returned
+    Returns
+    --------
+    header: dict
+        Dictionary of the binary header
+
+    Notes
+    ------
+    Only use this method on packets that you're sure are header packets
     '''
-    packet_array = []
-    while True:
-        packet = read_packet(input_file, delimeter)
-        if packet == b'':
-            break
-        packet_array.append(packet)
+    fields = {'Magic number': 'I',
+              'File version': 'H',
+              'File type data': 'H',
+              'Machine ID': 'I',
+              'Session ID': 'I',
+              'Start time': 'q',
+              'End time': 'q',
+              'Compression': 'H',
+              'Machine type': 'H',
+              'Data size': 'I',
+              'CRC': 'H',
+              'MCSize': 'H'}
 
-    return packet_array
+    header = extract_packet(packet, fields)
+
+    header["Start time"] = convert_unix_time(header["Start time"])
+    header["End time"] = convert_unix_time(header["End time"])
+
+    return header
 
 
 def extract_packet(packet, fields):
@@ -212,49 +284,10 @@ def extract_packet(packet, fields):
     fields : The varying data fields that are expected to be found within
              packet
 
-    Attributes
-    ----------
-
-    VERBOSE : bool
-        if True, print 'Extracting {field} from {SOURCE}
-
-    C_TYPES : dictionary {character: int}
-        The keys of this dictionary indicate a c_type, and the values indicate
-        the corresponding size of that c_type. For more info, see
-        https://docs.python.org/3/library/struct.html
-
-    data : String array
-        A String array to be populated with the various fields found in the
-        packet
-
-    field : {string: character}
-        Contains the name of the field (e.g., Start time, machine ID, etc.),
-        and the c_type of that field (e.g., H, I, L, etc.)
-
-    number_of_bytes : int
-        The number of bytes used by the current field, determined by that
-        fields' c_type
-
-    bytes_to_be_extracted : Bytes array
-        The appropriate number of Bytes, taken from packet, to be unpacked
-
-    extracted_line : String
-        The fully extracted line, ready to be appeneded to data.
-        Example: Start Time: 1553245673000
-
-    Notes
-    --------
-    Once the bytes from packet are correctly read and appended to data, they
-    are removed from packet. This is simply to make parsing the data cleaner
-
-    All the data are little endian, struct.unpack() expects a '<' before the
-    c_type to specifiy if the Bytes are little endian, which is why a '<' is
-    prepended to the c_type
-
-    struct.unpack() returns a tuple, using (extracted_line,) = struct.unpack()
-    automatically returns the unpacked tuple.
-    https://stackoverflow.com/questions/13894350/what-does-the-comma-mean-in-pythons-unpack#13894363
-
+    Note
+    ----
+    struct.unpack() expects a '<' before the c_type to specifiy if the Bytes
+    are little endian, which is why a '<' is prepended to the c_type
 
     Returns
     -------
@@ -263,14 +296,15 @@ def extract_packet(packet, fields):
     '''
 
     global C_TYPES
-    data = []
+    data = {}
 
     for field in fields:
         if VERBOSE:
-            print('Extracting {} from {}'.format(field, SOURCE))
+            print('Extracting {} from {}'.format(field, source))
 
         c_type = fields.get(field)
         number_of_bytes = C_TYPES.get(c_type)
+        #remove bytes from back because little endian
         bytes_to_be_extracted = packet[:number_of_bytes]
         del packet[:number_of_bytes]
 
@@ -281,65 +315,124 @@ def extract_packet(packet, fields):
         c_type = '<' + c_type
         # https://stackoverflow.com/questions/13894350/what-does-the-comma-mean-in-pythons-unpack#13894363
         (extracted_line,) = struct.unpack(c_type, bytes_to_be_extracted)
-        data.append('{}: {}\n'.format(field, extracted_line))
+        data.update({field: extracted_line})
 
     return data
 
 
-def extract_header(packet):
+def data_from_packets(packets, dict_list = []):
     '''
-    Uses extract_packet to extract the header information from a packet.
+    Extracts the data from a packet array.
 
-    Attributes
-    ----------
-    fields : Dictionary {Field name: c_type}
-        A dictionary containing the various fields found in a header packet,
-        along with their corresponding c_type, which determines the number of
-        bytes that fiels uses. See the C_TYPES dictionary.
+    Parameters
+    -----------
+    packets: array of binary packets to be extracted
+
+    dict_list: List of all potential extraction patterns for the packets.
 
     Returns
     --------
-    A method call to extract_packet, which itself will return a string array
-
-    Notes
-    ------
-    Only use this method on packets that you're sure are header packets
+    data_array: [dict]
+        An list of dictionarys of information extracted from the packets in the
+        same order as the packets.
     '''
-    global start_time
+    if dict_list == []:
+        dict_list = EXTRACTION_FIELDS
+    data_array = []
 
-    fields = {'Magic number': 'I',
-              'File version': 'H',
-              'File type data': 'H',
-              'Machine ID': 'I',
-              'Session ID': 'I',
-              'Start time': 'Q',
-              'End time': 'Q',
-              'Compression': 'H',
-              'Machine type': 'H',
-              'Data size': 'I',
-              'CRC': 'H',
-              'MCSize': 'H'}
+    for packet in packets:
+        length = len(packet)
+        try:
+            fields = field_of_length(length, dict_list)
+            packet_data = extract_packet(packet, fields)
+            packet_data = apply_type_and_time(length, packet_data)
+            data_array.append(packet_data)
 
-    header = extract_packet(packet, fields)
+        except KeyError:
+            if DEBUG:
+                warnings.warn('Packet {} was not extracted'.format(packet))
 
-
-    header[5] = convert_time_string(header[5])
-    header[6] = convert_time_string(header[6])
-
-    start_time = re.search('[^s \n]*$', header[5]).group()
-
-    return header
+    return data_array
 
 
-def separate_int(input_string):
+def field_of_length(length, dict_list):
     '''
-    Converts input_string into an array, of the form [string, int, string]
-    '''
-    strings = re.findall(r'\D+', input_string)
-    integer = re.search(r'\d+', input_string)
+    Retrieves the dictionary of the given size for extraction.
 
-    separated_string = [strings[0], int(integer.group()), strings[1]]
-    return separated_string
+    The only expected exception sould be a KeyError
+
+    Parameters
+    -----------
+    length: The length of the dictionary in Bytes
+
+    dict_list: List of potential Dictionary
+
+    Returns
+    --------
+    dict: The dictionary from the dict list with corresponding length
+
+    '''
+    if type(dict_list) is not type([]):
+        raise TypeError("Error: the dictionary list must be a list of dictionarys.")
+    elif type(dict_list[0]) is not type({}):
+        raise TypeError("Error: the dictionary list must be a list of dictionarys.")
+    if type(length) is not type(1):
+        raise TypeError("Error: length {} is not of type Int.".format(length))
+
+    for dict in dict_list:
+        size = 0
+        try:
+            for (key, item) in dict.items():
+                size += C_TYPES[item]
+        except KeyError:
+            raise ValueError("Error: Dictionary values are not valid C_TYPES" )
+
+        if length == size:
+            return dict
+
+    # This is the only expected error
+    raise KeyError("Error: No dictionary of size {} found.".format(size))
+
+
+def apply_type_and_time(length, packet_data):
+    """
+    Applys the packet type, sub type and human readable time to the data.
+    Packet data is altered regerdless but the value is returned for readability.
+
+    Parameters
+    ----------
+    length: length to calculate packet type and subtype.
+
+    packet_data: extracted packet data
+
+    Returns
+    --------
+    packet_data: changed packet data, the return is not strictly necissary
+    """
+    blank = True
+    for (field, data) in packet_data.items():
+        if "time" in field:
+            if data != 0 and type(data)is type(1):
+                blank = False
+                packet_data[field] = convert_unix_time(data)
+
+    if length == 67:
+        packet_data.update({'subtype': 1, 'type':1})
+    elif length == 62:
+        packet_data.update({'subtype': 0})
+    elif length == 84:
+        packet_data.update({'subtype': 1})
+    elif length == 68:
+        if blank:
+            packet_data.update({'subtype': 4})
+        else:
+            packet_data.update({'subtype': 3})
+
+    if VERBOSE:
+        print("Packet type {}.{} extracted.".format(
+                packet_data.get("type"), packet_data.get("subtype") ))
+
+    return packet_data
 
 
 def convert_unix_time(unixtime):
@@ -374,76 +467,208 @@ def convert_unix_time(unixtime):
     return datetime.utcfromtimestamp(unixtime).strftime('%Y-%m-%d_%H-%M-%S')
 
 
-def convert_time_string(input_string):
+def twos(num):
     '''
-    Takes a string of the form "Start time: 1553245673000\n" and returns the
-    UNIX time converted to the more human-readable format:
-    "Start time: 2019-03-22_09:07:53"
+    gets the two compliment of input number
     '''
-    time = separate_int(input_string)
-    time[1] = convert_unix_time(time[1])
-    converted_string = ''.join(time)
-    return converted_string
+    bits = num.bit_length()
+    compliment = num - (1 << bits)
+    return compliment
 
 
-def write_file(input_file, destination, packet_type=None):
+def process_cpap_binary(packets, filehandle):
     '''
-    Writes input_file out to the users' drive, in directory destination
+    parses file in order to determine
+        -order of data/data type
+        -the data
+        -data start and stop times for decompressing
 
-    Parameters
+    Input
     ----------
-    input_file : file
-        The file to be written out
+    packets: array of dictionaries containing the following info
+    filehandle: rest of data
 
-    destination : Path
-        The directory to place the written out file
+    Returns : data
+    --------
+    data - dictonary of dictionaries with the following format
+    {
+        (data type int) : {
+                        no packets :
+                        values :
+                        stop_times :
+                        }
 
-    packet_type : String
-        The type of packet being written out (e.g., header, event summary)
+        (data type int) : {
+                        no packets :
+                        values :
+                        stop_times :
+                        }
+    }
 
-    Attributes
-    ----------
-    SOURCE : String
-        The name of the original file
+    Notes
+    ------
 
-    output_name : String
-        The name of the output file
-
-    VERBOSE : bool
-        If True, print 'Now writing out SOURCE.JSON', where 'source' is the
-        name of the orginal file.
     '''
+    data = {}
+    uint32_ctype = 'I'
+    uint32_bytes = C_TYPES.get(uint32_ctype)
+    for packet in packets:
+        # check if there is associated data
+        if packet["no packets"] > 0:
+            ptype = packet["Data type"]
+            ptypeInfo = CPAP_DATA_TYPE.get(ptype, {'stop_times':True,  'ctype':'H',  'name':"Unknown"})
+            data_ctype = ptypeInfo['ctype']
+            data_bytes = C_TYPES.get(data_ctype)
+            data[ptype] = { }
 
-    global start_time
-    output_name = start_time + '.txt'
+            # Read data values
+            data_vals = []
+            gain = packet["double 2"]
+            for _ in range(packet["no entries"]):
+                read_bytes = filehandle.read(data_bytes)
+                #(extracted_data,) = struct.unpack(data_ctype, read_bytes)
+                extracted_data = int.from_bytes(read_bytes, byteorder='big', signed=True)
+                val = round(extracted_data*gain, 3)
+                if val > packet['Max Val']:
+                    val = twos(int(val))
+                elif val < packet['Min Val']:
+                    val+=256
+                data_vals.append(val)
+            packet["data_vals"] = data_vals
+            # Read stop times
+            data_vals = []
+            if ptypeInfo['stop_times']:
+                for _ in range(packet["no entries"]):
+                    read_bytes = filehandle.read(uint32_bytes)
+                    # ignore padding byte
+                    extracted_data = int.from_bytes(read_bytes[1:], byteorder='little')
+                    # divide time by 1000 to get to seconds
+                    data_vals.append(extracted_data/1000)
+            packet["stop_times"] = data_vals
+    return packets
 
-    # Check if input_file is empty
-    if input_file == '':
-        warnings.warn('WARNING: Output is empty')
+def decompress_data(all_data, header):
+    '''
+    decompresses data
+    Input : all_data -- output from process_cpap_binary
+    Output : raw_data -- dictionary key = cpap string type, value = {'Values' : values, "Times": times
+    '''
+    # TODO get config file to determine desired data to be decompressed
+    # ptypes to be decompressed
+    desired = [4352, 4356]
+    microInSec = 1000000
+    raw_data = {}
+    sessionStart = datetime.strptime(header['Start time'], '%Y-%m-%d_%H-%M-%S')
+    sessionEnd = datetime.strptime(header['End time'], '%Y-%m-%d_%H-%M-%S')
+    # Decompress each type desired data type
+    for type in desired:
+        ptype_info = CPAP_DATA_TYPE.get(type, {'stop_times':True,  'ctype':'H',  'name':"Unknown"})
+        ptype_data = [d for d in all_data if d['Data type'] == type][0]
+        try:
+            ptype_start = datetime.strptime(ptype_data['time 1'], '%Y-%m-%d_%H-%M-%S')
+            ptype_end = datetime.strptime(ptype_data['time 2'], '%Y-%m-%d_%H-%M-%S')
+        except:
+            print("No start or end time for", type)
+            continue
+        decomp_data = []
+        time_tags = []
+        interval = ptype_info["interval"]
 
-    if VERBOSE:
-        print('Now writting {} to file {} at {}'.format(packet_type,
-                                                        output_name,
-                                                        destination))
+        # create stop times if none
+        if not ptype_info['stop_times']:
+            ptype_data['stop_times'] = [(j+1)*interval for j in range(len(ptype_data['data_vals']))]
 
-    if not os.path.isdir(destination):
-        raise FileNotFoundError(
-            'ERROR: destination directory {} not found!'.format(DESTINATION))
+        # pre fill empty values up until data start
+        intervalStep = int(interval * microInSec)
+        for sec in range(int(((ptype_start - sessionStart).seconds-1)/interval)):
+            decomp_data.append("")
+            time = ptype_start+timedelta(microseconds=sec/interval*microInSec)
+            time_tags.append(time.strftime('%m-%d-%y_%H:%M:%S.%f'))
 
-    with open(destination + '/' + output_name, 'a') as output:
-        if packet_type is not None:
-            output.write('---{}---\n'.format(packet_type.upper()))
+        # match data with time tags
+        interBegin = (sessionStart - datetime.min).seconds*microInSec + (sessionStart - datetime.min).microseconds
+        counterMicroSec = interBegin
+        for stop, val in zip(ptype_data["stop_times"], ptype_data["data_vals"]):
+            intervalEnd = int(interBegin + microInSec*stop)
+            for i in range(counterMicroSec,intervalEnd, intervalStep):
+                time = ptype_start + timedelta(microseconds=i)
+                time_tags.append(time.strftime('%m-%d-%y_%H:%M:%S.%f'))
+                decomp_data.append(val)
+            counterMicroSec = intervalEnd
 
-        for line in input_file:
-            output.write(str(line))
+        # post fill empty values until data end
+        for sec in range(int((sessionEnd - ptype_end).seconds/interval)-1):
+            time = ptype_start + timedelta(microseconds=sec / interval * microInSec)
+            time_tags.append(time.strftime('%m-%d-%y_%H:%M:%S.%f'))
+            decomp_data.append("")
+
+        raw_data[CPAP_DATA_TYPE[type]["name"]] = {"Times"  : time_tags,
+                                                "Values" : decomp_data}
+    return raw_data
+
 
 
 # Global variables
-SOURCE = "."
-DESTINATION = "."
 VERBOSE = False
 DEBUG = False
-start_time = 'INVALID START TIME'
+EXTRACTION_FIELDS = [
+        # Type 0
+            {   'type':'B',
+                'time 1': 'q',
+                'time 2': 'q',
+                'no entries': 'L',
+                'U2': 'B',
+                'double 1': 'd',
+                'double 2': 'd',
+                'double 3': 'd',
+                'Min Val': 'd',
+                'Max Val': 'd'
+            },
+        # Type 1
+            {   'type':'B',
+                'U1': 'd',
+                'U2': 'd',
+                'Data type': 'L',
+                'no packets': 'H',
+                'time 1': 'q',
+                'time 2': 'q',
+                'no entries': 'L',
+                'field 2': 'B',
+                'double 1': 'd',
+                'double 2': 'd',
+                'double 3': 'd',
+                'Min Val': 'd',
+                'Max Val': 'd'
+            },
+        #Type 3
+            {   'type':'B',
+                'Data type': 'L',
+                'no packets': 'H',
+                'time 1': 'q',
+                'time 2': 'q',
+                'no entries': 'L',
+                'field 2': 'B',
+                'double 1': 'd',
+                'double 2': 'd',
+                'double 3': 'd',
+                'Min Val': 'd',
+                'Max Val': 'd'
+            },
+        # Header
+            {   'Data type': 'H',
+                'U1': 'H',
+                'no packets': 'H',
+                'time 1': 'q',
+                'time 2': 'q',
+                'no entries': 'L',
+                'field 2': 'B',
+                'double 1': 'd',
+                'double 2': 'd',
+                'double 3': 'd',
+                'Min Val': 'd',
+                'Max Val': 'd'
+            }
+        ]
 
 # See https://docs.python.org/3/library/struct.html
 C_TYPES = {'c': 1,
@@ -458,16 +683,47 @@ C_TYPES = {'c': 1,
            'q': 8,
            'Q': 8,
            'f': 4,
-           'd': 8}
+           'd': 8
+           }
+
+CPAP_DATA_TYPE = {# bool if stop times included, associated ctype for data vals, name of data
+    4097 : {'stop_times':True,  'ctype':'H', 'interval':1.0, 'name':"Clear Airway Apneas event"}, # (#13 and time offset for each event)
+    4098 : {'stop_times':True,  'ctype':'H', 'interval':1.0, 'name':"Obstructive Apnea"}, # (#15 and time offset for each event
+    4099 : {'stop_times':True,  'ctype':'H', 'interval':1.0, 'name':"Hypopneas"}, # events per hour
+    4102 : {'stop_times':True,  'ctype':'H', 'interval':1.0, 'name':"RERA"},
+    4103 : {'stop_times':True,  'ctype':'H', 'interval':1.0, 'name':"Vibratory Snore"}, # events per hour
+    4104 : {'stop_times':True,  'ctype':'H', 'interval':1.0, 'name':"System One (+DM) Vib snore event"}, # #1 and time
+    4105 : {'stop_times':True,  'ctype':'H', 'interval':1.0, 'name':"Pressure Pulse"},
+    4136 : {'stop_times':True,  'ctype':'H', 'interval':1.0, 'name':"Unknown"},
+    4352 : {'stop_times':False, 'ctype':'h', 'interval':0.2, 'name':"Breathing Flow Rate Waveform"}, # (L/min)
+    4355 : {'stop_times':True,  'ctype':'H', 'interval':1.0, 'name':"Tidal Volume"}, # (*20 for ml/min)
+    4356 : {'stop_times':True,  'ctype':'H', 'interval':1.0, 'name':"Snore Volume"}, # (snores per some unit of time)
+    4357 : {'stop_times':True,  'ctype':'H', 'interval':1.0, 'name':"Minute Ventilation"}, # (divide by 8 to get L)
+    4358 : {'stop_times':True,  'ctype':'H', 'interval':1.0, 'name':"Respiratory Rate"}, # (BPM)
+    4360 : {'stop_times':True,  'ctype':'H', 'interval':1.0, 'name':"Rate of detected mask leakage"}, # (L/min) units good
+    4362 : {'stop_times':True,  'ctype':'H', 'interval':1.0, 'name':"Expiratory Time"}, # (Sec)
+    4363 : {'stop_times':True,  'ctype':'H', 'interval':1.0, 'name':"Inspiratory Time"}, # (Sec)
+    4364 : {'stop_times':True,  'ctype':'H', 'interval':1.0, 'name':"Unknown"},
+    4366 : {'stop_times':True,  'ctype':'H', 'interval':1.0, 'name':"Unknown"},
+    4374 : {'stop_times':True,  'ctype':'H', 'interval':1.0, 'name':"AHI"},
+    4375 : {'stop_times':True,  'ctype':'H', 'interval':1.0, 'name':"Total Leak Rate (L/min)"},
+    4377 : {'stop_times':True,  'ctype':'H', 'interval':1.0, 'name':"Respiration Disturbance Rate"},
+    4439 : {'stop_times':True,  'ctype':'H', 'interval':1.0, 'name':"Unknown"},
+    4440 : {'stop_times':True,  'ctype':'H', 'interval':1.0, 'name':"Unknown"}
+}
 
 
 if __name__ == '__main__':
-    setup_args()
-
-    DATA_FILE = open_file(SOURCE)
+    source, destination = setup_args()
+    DATA_FILE = open_file(source)
     PACKET_DELIMETER = b'\xff\xff\xff\xff'
-
-    PACKETS = read_packets(DATA_FILE, PACKET_DELIMETER)
-
-    HEADER = extract_header(PACKETS[0])
-    write_file(HEADER, DESTINATION, 'header')
+    PACKETS = split_packets(DATA_FILE, PACKET_DELIMETER)
+    header = extract_header(PACKETS[0])
+    data = data_from_packets(PACKETS)
+    data = process_cpap_binary(data, DATA_FILE)
+    raw = decompress_data(data, header)
+    with open("test.txt", 'w') as file:
+        file.write(str(raw))
+        file.write(str(header))
+        file.write(str(data))
+    exit()

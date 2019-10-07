@@ -26,7 +26,8 @@ class TestOpenFile(unittest.TestCase):
     @patch('cpap_extraction.open')
     @patch('cpap_extraction.os.path.isfile', return_value=True)
     def test_open_file_exists(self, mocked_os, mocked_file):
-        cpap_extraction.open_file('Any file')
+        with self.assertRaises(TypeError):
+            cpap_extraction.open_file('Any file')
         mocked_file.assert_called_once_with('Any file', 'rb')
 
     @patch('cpap_extraction.open')
@@ -36,6 +37,31 @@ class TestOpenFile(unittest.TestCase):
         # https://docs.python.org/3.6/library/unittest.html
         with self.assertRaises(FileNotFoundError):
             cpap_extraction.open_file('Any file')
+
+
+class TestSetupArgs(unittest.TestCase):
+    def test_normal(self):
+        cpap_extraction.sys.argv = [ "cpap_extraction.py", "inputfile"]
+        input, output_path = cpap_extraction.setup_args()
+        self.assertEqual(input, "inputfile")
+        self.assertEqual(output_path, ".")
+
+    def test_bad_argument(self):
+        """
+        This test puts extra stuff in the output
+        """
+        if False:
+            cpap_extraction.sys.argv = [ "cpap_extraction.py", "inputfile", "output"]
+            with self.assertRaises(SystemExit):
+                cpap_extraction.setup_args()
+
+    def test_flags(self):
+        cpap_extraction.sys.argv = [ "cpap_extraction.py", "-v", "-d", "inputfile", "--destination=output"]
+        input, output_path = cpap_extraction.setup_args()
+        self.assertEqual(input, "inputfile")
+        self.assertEqual(output_path, "output")
+        self.assertTrue(cpap_extraction.VERBOSE)
+        self.assertTrue(cpap_extraction.DEBUG)
 
 
 class TestReadPacket(unittest.TestCase):
@@ -105,16 +131,16 @@ class TestReadPacket(unittest.TestCase):
             packet = cpap_extraction.read_packet(data_file, delimeter)
 
 
-class TestReadPackets(unittest.TestCase):
+class TestSplitPackets(unittest.TestCase):
     '''
-    Tests the read_packets method, which should simply call the read_packet
+    Tests the split_packets method, which should simply call the split_packet
     method for each packet in a data file.
 
     Methods
     -------
         testNormal
             Tests a data_file containing two packets, separated by a
-            delimeter of \xff\xff\xff\xff. Ensures that read_packets returns
+            delimeter of \xff\xff\xff\xff. Ensures that split_packets returns
             an array of size 2, and that the first index of the array contains
             the first packet, and the second index of the array contains the
             second packet
@@ -126,11 +152,11 @@ class TestReadPackets(unittest.TestCase):
     empty, etc. are tested in testReadPacket
     '''
 
-    def test_nomarl(self):
+    def test_normal(self):
         data_file = io.BytesIO(b'\x03\x0c\x01\x00\xff\xff\xff\xff\x45')
         delimeter = b'\xff\xff\xff\xff'
 
-        packets = cpap_extraction.read_packets(data_file, delimeter)
+        packets = cpap_extraction.split_packets(data_file, delimeter)
         self.assertEqual(len(packets), 2)
         self.assertEqual(packets[0], b'\x03\x0c\x01\x00')
         self.assertEqual(packets[1], b'\x45')
@@ -152,14 +178,41 @@ class TestExtractPacket(unittest.TestCase):
 
         input_file = bytearray(b'''\x2a\x00\xc3\x01\x00\x00\xc9\x07\xcc\x00\xaa\xaa\x42\x1a\xcd\x79\x40\x09''')
 
-        correct_output = ['Test unsigned short: 42\n',
-                          'Test unsigned int: 451\n',
-                          'Test unsigned long: 13371337\n',
-                          'Test unsigned long long: 666666666666666666\n']
+        correct_output = {'Test unsigned short': 42,
+                          'Test unsigned int': 451,
+                          'Test unsigned long': 13371337,
+                          'Test unsigned long long': 666666666666666666}
 
         extracted_packet = cpap_extraction.extract_packet(input_file, fields)
 
         self.assertEqual(extracted_packet, correct_output)
+
+
+class TestDataFromPackets(unittest.TestCase):
+    def test_standard(self):
+        packets = [bytearray(b'\x2a\x00\xc3\x01\x00\x00\xc9\x07\xcc\x00\xaa\xaa\x42\x1a\xcd\x79\x40\x09'),
+                   bytearray(b'\x2a\x00\xc3\x01\x00\x00\xc9\x07\xcc\x00'),
+                   bytearray(b'\x2a\x00\xc3\x01\x00\x00\xc9\x07\xcc\x00\xaa\xaa\x42\x1a')
+        ]
+        fields = [{'Test unsigned short': 'H',
+                  'Test unsigned int': 'I',
+                  'Test unsigned long': 'L',
+                  'Test unsigned long long': 'Q'},
+                  {'Test unsigned short': 'H',
+                    'Test unsigned int': 'I',
+                    'Test unsigned long': 'L'}]
+        correct_output = [{'Test unsigned short': 42,
+                              'Test unsigned int': 451,
+                              'Test unsigned long': 13371337,
+                              'Test unsigned long long': 666666666666666666
+                        },
+                        {   'Test unsigned short': 42,
+                            'Test unsigned int': 451,
+                            'Test unsigned long': 13371337,
+                        }]
+
+        output = cpap_extraction.data_from_packets(packets, fields)
+        self.assertEqual(output, correct_output)
 
 
 class TestConvertUnixTime(unittest.TestCase):
@@ -229,69 +282,98 @@ class TestConvertUnixTime(unittest.TestCase):
         self.assertEqual(converted_time, 'ERROR: test is invalid\n')
 
 
-class test_convert_time_string(unittest.TestCase):
+class TestApplyDateandTime(unittest.TestCase):
+
+    def test_type_0_3(self):
+        expected_output = {'type': 0, 'time 1': '2019-03-01_08-28-46', 'time 2': '2019-03-01_11-54-15', 'no entries': 207, 'field 2': 1, 'subtype': 3}
+        input = {'type': 0, 'time 1': 1551428926000, 'time 2': 1551441255000, 'no entries': 207, 'field 2': 1}
+        output = cpap_extraction.apply_type_and_time(68, input)
+        self.assertEqual(output, expected_output)
+
+    def test_first_packet(self):
+        input = {'Data type': 4440, 'U1': 0, 'no packets': 1}
+        expected_output = {'Data type': 4440, 'U1': 0, 'no packets': 1, 'type':1, 'subtype':1}
+        output = cpap_extraction.apply_type_and_time(67, input)
+        self.assertEqual(output, expected_output)
+
+    def test_type_0_4(self):
+        expected_output = {'type': 0, 'Data type': 4377, 'no packets': 1, 'time 1': 0, 'time 2': 0, 'subtype': 4}
+        input = {'type': 0, 'Data type': 4377, 'no packets': 1, 'time 1': 0, 'time 2': 0}
+        output = cpap_extraction.apply_type_and_time(68, input)
+        self.assertEqual(output, expected_output)
+
+    def test_type_1(self):
+        expected_output = {'type': 1, 'Data type': 4377, 'no packets': 1, 'time 1': 0, 'time 2': 0, 'subtype': 1}
+        input = {'type': 1, 'Data type': 4377, 'no packets': 1, 'time 1': 0, 'time 2': 0}
+        output = cpap_extraction.apply_type_and_time(84, input)
+        self.assertEqual(output, expected_output)
+
+    def test_type_0_0(self):
+        expected_output = {'type': 0, 'Data type': 4377, 'no packets': 1, 'time 1': 0, 'time 2': 0, 'no entries': 207, 'field 2': 1, 'subtype': 0 }
+        input = {'type': 0, 'Data type': 4377, 'no packets': 1, 'time 1': 0, 'time 2': 0, 'no entries': 207, 'field 2': 1}
+        output = cpap_extraction.apply_type_and_time(62, input)
+        self.assertEqual(output, expected_output)
+
+    def test_no_change(self):
+        input = {'type': 1, 'Data type': 4377, 'no packets': 1, 'time 1': "time 1", 'time 2': "time 2", 'no entries': 207, 'field 2': 1}
+        inputf = input.copy()
+        output = cpap_extraction.apply_type_and_time(-1, inputf)
+        self.assertDictEqual(output, input)
+
+
+class TestFieldOfLength(unittest.TestCase):
     '''
-    Tests the convert_time_string() method, which takes a string of the form
-    "Start time: 1553245673000\n" and returns the UNIX time converted to the
-    more human-readable format: "Start time: 2019-03-22_09:07:53"
+    Tests the "fields_of_length" method
     '''
+    def test_type_error(self):
+        with self.assertRaises(TypeError):
+            cpap_extraction.field_of_length(25, {'Just a dictionary not a list': 'e'})
+        with self.assertRaises(TypeError):
+            cpap_extraction.field_of_length("nope", [{'somedata': 'Q'}])
+        with self.assertRaises(TypeError):
+            cpap_extraction.field_of_length(25, ['Not a dictioary'])
+
+    def test_key_error(self):
+        with self.assertRaises(KeyError):
+            cpap_extraction.field_of_length(25, [{"only 8": 'Q'}])
+
+    def test_value_error(self):
+        with self.assertRaises(ValueError):
+            cpap_extraction.field_of_length(25, [{"invalid c type": 'nope'}])
 
     def test_normal(self):
-        input_string = 'Start time: 1553245673000\n'
-        converted_string = cpap_extraction.convert_time_string(input_string)
-        self.assertEqual(converted_string, 'Start time: 2019-03-22_09-07-53\n')
-
-class test_separate_int(unittest.TestCase):
-    '''
-    Tests the separate_int() method, which takes a string as an input and
-    returns a tuple of the form (string, int, string)
-    '''
-    def test_normal(self):
-        input_string = 'Test time: 0451 TEST\n'
-        separated_string = cpap_extraction.separate_int(input_string)
-        self.assertEqual(separated_string, ['Test time: ', 451, ' TEST\n'])
+        eight = {"8": 'q'}
+        four = {"4": 'i'}
+        sixteen = {"8": 'q', "another 8": 'Q'}
+        dicts = [eight, four, sixteen]
+        self.assertEqual(cpap_extraction.field_of_length(4,dicts), four)
 
 
-class TestWriteFile(unittest.TestCase):
-    '''
-    Tests the write_file method, which takes a file object created by the
-    open_file method, and writes it out to a file called
-    orig_file_extracted.JSON, in the specified directory on the users' drive.
+class TestExtractionSystem(unittest.TestCase):
 
-    Methods
-    -------
-        testWriteFileDirExists
-            Tests whether write_file correctly creates a file called
-            orig_file_extracted.JSON in the specified directory
-        testWriteFileDirDoesNotExist
-            Tests whether write_file correctly raises the FileNotFoundError
-            exception if the specified directory to write the file into does
-            not exist
-        testWriteEmptyFile
-            Tests whether write_file correctly raises a warning if the input
-            File is empty
-    '''
+    def read_results_file(self, filename):
+        results = []
+        with open(filename, 'r') as rfile:
+            text = rfile.read()
+            lines = text.split('\n')
+            for line in lines:
+                expected = line.strip()
+                if expected != "":
+                    if expected[0] != '#':
+                        results.append(expected)
+        return results
 
-    @patch('cpap_extraction.open')
-    @patch('cpap_extraction.os.path.isdir', return_value=True)
-    def test_write_file_dir_exists(self, mocked_os, mocked_file):
-        # INVALID START TIME is the default value of start time, and thus, the
-        # default name of extracted files
-        cpap_extraction.write_file('Any file', 'Any directory')
-        mocked_file.assert_called_once_with('Any directory/INVALID START TIME.txt',
-                                            'a')
 
-    @patch('cpap_extraction.open')
-    @patch('cpap_extraction.os.path.isdir', return_value=False)
-    def test_write_file_dir_does_not_exist(self, mocked_os, mocked_file):
-        with self.assertRaises(FileNotFoundError):
-            cpap_extraction.write_file('Any file', 'Any directory')
+    def test_file_one(self):
+        results = self.read_results_file("TestFiles/test_one_result.txt")
+        header, packet_data = cpap_extraction.extract_file("TestFiles/test_one.001")
+        headerstr = str(header).strip()
+        self.assertEqual(headerstr, results.pop(0))
 
-    @patch('cpap_extraction.open')
-    @patch('cpap_extraction.os.path.isdir', return_value=True)
-    def test_write_empty_file(self, mocked_os, mocked_file):
-        with self.assertWarns(Warning):
-            cpap_extraction.write_file('', 'Any directory')
+        for packet in packet_data:
+            self.assertEqual(str(packet).strip(), results.pop(0))
+
+        self.assertTrue(len(results) == 0)
 
 
 if __name__ == '__main__':

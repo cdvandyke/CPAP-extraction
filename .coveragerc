@@ -6,4 +6,3 @@ include =
 exclude_lines =
 	print*
 	if __name__ == '__main__':
-	def setup_args
