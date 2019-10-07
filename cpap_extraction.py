@@ -723,7 +723,11 @@ if __name__ == '__main__':
     data = process_cpap_binary(data, DATA_FILE)
     raw = decompress_data(data, header)
     with open("test.txt", 'w') as file:
-        file.write(str(raw))
         file.write(str(header))
-        file.write(str(data))
-    exit()
+        file.write("\n")
+        for d in data:
+            file.write(str(d))
+            file.write("\n")
+        for r in raw:
+            file.write(str(r))
+            file.write("\n")
