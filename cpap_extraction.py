@@ -566,7 +566,6 @@ def decompress_data(all_data, header):
     microInSec = 1000000
     raw_data = {}
     sessionStart = datetime.strptime(header['Start time'], '%Y-%m-%d_%H-%M-%S')
-    sessionEnd = datetime.strptime(header['End time'], '%Y-%m-%d_%H-%M-%S')
     # Decompress each type desired data type
     for type in desired:
         ptype_info = CPAP_DATA_TYPE.get(type, {'stop_times':True,  'ctype':'H',  'name':"Unknown"})
@@ -580,33 +579,21 @@ def decompress_data(all_data, header):
         decomp_data = []
         time_tags = []
         interval = ptype_info["interval"]
+        intervalStep = int(interval * microInSec)
 
         # create stop times if none
         if not ptype_info['stop_times']:
             ptype_data['stop_times'] = [(j+1)*interval for j in range(len(ptype_data['data_vals']))]
 
-        # pre fill empty values up until data start
-        intervalStep = int(interval * microInSec)
-        fill_data = blankDataFill(ptype_start,sessionStart, ptype_start, interval)
-        time_tags += fill_data[0]
-        decomp_data += fill_data[1]
-
-
         # match data with time tags
-        interBegin = (sessionStart - datetime.min).seconds*microInSec + (sessionStart - datetime.min).microseconds
-        counterMicroSec = interBegin
+        counterMicroSec = 0
         for stop, val in zip(ptype_data["stop_times"], ptype_data["data_vals"]):
-            intervalEnd = int(interBegin + microInSec*stop)
+            intervalEnd = int(microInSec*stop)
             for i in range(counterMicroSec,intervalEnd, intervalStep):
                 time = ptype_start + timedelta(microseconds=i)
                 time_tags.append(time.strftime('%m-%d-%y_%H:%M:%S.%f'))
                 decomp_data.append(val)
             counterMicroSec = intervalEnd
-
-        # post fill empty values until data end
-        fill_data = blankDataFill(sessionEnd, ptype_end, ptype_start, interval)
-        time_tags += fill_data[0]
-        decomp_data += fill_data[1]
 
         raw_data[CPAP_DATA_TYPE[type]["name"]] = {"Times"  : time_tags,
                                                 "Values" : decomp_data}
