@@ -728,6 +728,3 @@ if __name__ == '__main__':
         for d in data:
             file.write(str(d))
             file.write("\n")
-        for r in raw:
-            file.write(str(r))
-            file.write("\n")
