@@ -106,6 +106,7 @@ def extract_file(source_file, destination = '.', verbose = False, debug = False 
     packets = split_packets(data_file)
     header = extract_header(packets[0])
     packet_data = data_from_packets(packets)
+    data_to_csv(packet_data)
 
     return header, packet_data
 
@@ -599,7 +600,13 @@ def decompress_data(all_data, header):
                                                 "Values" : decomp_data}
     return raw_data
 
-
+##############################################################
+def data_to_csv(packet_data):
+    with open('test.csv', 'w') as f:
+        for each in packet_data:
+            for key in each.keys():
+                f.write("%S,%s\n"%(key, each[key]))
+##############################################################
 
 # Global variables
 VERBOSE = False
