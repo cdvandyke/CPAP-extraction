@@ -1,5 +1,8 @@
 '''
-This module handles config file loading and saving
+This module handles config file loading and saving.
+It extends the base class of dict with load and save functiuonality in JSON
+Note to avoid duplication all keys and values should be strings.
+Ezra Dudden
 '''
 from os import path
 import json
@@ -9,54 +12,62 @@ import warnings                 # For raising warnings
 class config(dict):
 
     def __init__(self, *args, **kwargs):
-        self.location = ""
-        self.name = ""
+        self.config_path = ""
         super().__init__(*args, **kwargs)
 
-    def load(self, name = "", location = ""):
-        self.set_file_path(name , location)
+    def load(self, name = ""):
+        self.set_file_path(name)
 
-        if not self.file_exists():
-            warnings.warn("File {} not found, no configuration loaded.".format(self.fullpath()))
+        if not path.isfile(self.config_path):
+            warnings.warn("File {} not found, no configuration loaded.".format(self.config_path))
             return
 
-        with open(self.location, 'r') as file:
+        with open(self.config_path, 'r') as file:
             s = file.read()
 
         dictionary = json.loads(s)
         self.update(dictionary)
 
-    def fullpath(self):
-        return path.join(self.location, self.name)
-
-    def set_file_path(self, location = "", name = ""):
-        self.set_directory(location)
-        self.set_filename(name)
-
-    def set_directory(self, location):
-        if path.isdir(location):
-            self.location = location
-        elif location == "temp":
-            self.location = tempfile.gettempdir()
-        else:
-            self.location = path.abspath()
-
-    def set_filename(self, name = ""):
+    def set_file_path(self, name=""):
+        """
+        Sets the file path to the provided path.
+        The default is if no path is provided is
+        TMP_PATH/py_config.json
+        """
         if name == "":
-            self.name = "cpap_config.json"
+            self.config_path = path.join(tempfile.gettempdir(), "py_config.json")
+        else:
+            if name[-5:].lower() != ".json":
+                warnings.warn("File {} is not a json file.".format())
+            self.config_path = name
 
-        nameparts = name.split(".")
-        if nameparts[-1] != "json":
-            newname = ".".join(nameparts[:-1])
-            self.name = "{}.{}".format(nameparts[0],"json")
-            warnings.warn("""File name '{}' is not a json file,
-                    file will be renamed as {}""".format(name, self.name))
-        else name:
-            self.name = name
+        if not path.isfile(self.config_path):
+            dir_path = path.dirname(self.config_path)
+            if dir_path != "" and not path.isdir(dir_path):
+                raise FileNotFoundError("No valid directory provided.")
+            else:
+                warnings.warn("The file {} does not yet exist, but will be made.".format(self.config_path))
+
+        return str(self.config_path)
 
     def save(self):
+        """
+        Saves the file at the already provided path
+        """
         try :
-            with open(self.fullpath(),'w') as file:
-                json.dump(self, file)
+            with open(self.config_path,'w') as file:
+                json.dump(self, file, indent=4, sort_keys=True)
         except:
             warnings.warn("Error: Configuration not saved")
+
+"""
+This is designed as an importable singleton config file.
+
+"""
+GLOBAL_CONFIG = config()
+
+if __name__ == "__main__":
+    c = config()
+    c.load("sample_config.json")
+    c.save()
+    print(str(c))
