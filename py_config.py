@@ -1,7 +1,7 @@
 '''
 This module handles config file loading and saving.
 It extends the base class of dict with load and save functiuonality in JSON
-Note to avoid duplication all keys and values should be strings.
+Note to avoid duplication all keys must be strings.
 Ezra Dudden
 '''
 from os import path
@@ -28,6 +28,8 @@ class config(dict):
         dictionary = json.loads(s)
         self.update(dictionary)
 
+
+
     def set_file_path(self, name=""):
         """
         Sets the file path to the provided path.
@@ -38,7 +40,7 @@ class config(dict):
             self.config_path = path.join(tempfile.gettempdir(), "py_config.json")
         else:
             if name[-5:].lower() != ".json":
-                warnings.warn("File {} is not a json file.".format())
+                warnings.warn("File {} is not a json file.".format(name))
             self.config_path = name
 
         if not path.isfile(self.config_path):
@@ -61,13 +63,12 @@ class config(dict):
             warnings.warn("Error: Configuration not saved")
 
 """
-This is designed as an importable singleton config file.
-
+GLOBAL_CONFIG is for use as an importable singleton config file.
 """
 GLOBAL_CONFIG = config()
 
 if __name__ == "__main__":
     c = config()
     c.load("sample_config.json")
-    c.save()
     print(str(c))
+    c.save()
