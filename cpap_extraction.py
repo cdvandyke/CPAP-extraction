@@ -54,10 +54,10 @@ def setup_args():
 
     Returns
     -------
-    source : path
+    :return source : path
         The binary file to be extracted
 
-    destination : path
+    :return destination : path
         The file path of the output file
     '''
     global VERBOSE
@@ -86,15 +86,15 @@ def extract_file(source_file, destination = '.', verbose = False, debug = False 
 
     Parameters
     ----------
-    source : Path
+    :param source : Path
         The file to be read
 
     Returns
     -------
-    header : Dict
+    :return header : Dict
         The binary files header data
 
-    packet_data: [Array Dict]
+    :return packet_data: [Array Dict]
         An array of extracted dictionaries containg packet data
     """
     global VERBOSE
@@ -122,7 +122,7 @@ def open_file(source):
 
     Parameters
     ----------
-    source : Path
+    :param source : Path
         The file to be read
 
     Returns
@@ -154,11 +154,11 @@ def split_packets(input_file, delimeter = b'\xff\xff\xff\xff'):
 
     Paramters
     ---------
-    input_file : File
+    :param input_file : File
         A file object created by read_file(), this object contains the data
         packet_array to be read
 
-    delimeter : bytes
+    :param delimeter : bytes
         The 'separator' of the packet_array in input_file. For .001 files, the
         delimeter is b'\xff\xff\xff\xff'
 
@@ -189,11 +189,11 @@ def read_packet(input_file, delimeter):
 
     Parameters
     ----------
-    input_file : File
+    :param input_file : File
         A file object created by read_file(), this object contains the data
         packets to be read
 
-    delimeter : bytes
+    :param delimeter : bytes
         The 'separator' of the packets in input_file. For .001 files, the
         delimeter is b'\xff\xff\xff\xff'
 
@@ -244,7 +244,7 @@ def extract_header(packet):
 
     Returns
     --------
-    header: dict
+    :return header: dict
         Dictionary of the binary header
 
     Notes
@@ -278,10 +278,10 @@ def extract_packet(packet, fields):
 
     Parameters
     ----------
-    packet : Bytes
+    :param packet : Bytes
         The packet, created by read_packet() to be extracted
 
-    fields : The varying data fields that are expected to be found within
+    :param fields : The varying data fields that are expected to be found within
              packet
 
     Note
@@ -291,7 +291,7 @@ def extract_packet(packet, fields):
 
     Returns
     -------
-    data : String array
+    :return data : String array
         The extracted data
     '''
 
@@ -326,13 +326,13 @@ def data_from_packets(packets, dict_list = []):
 
     Parameters
     -----------
-    packets: array of binary packets to be extracted
+    :param packets: array of binary packets to be extracted
 
-    dict_list: List of all potential extraction patterns for the packets.
+    :param dict_list: List of all potential extraction patterns for the packets.
 
     Returns
     --------
-    data_array: [dict]
+    :return data_array: [dict]
         An list of dictionarys of information extracted from the packets in the
         same order as the packets.
     '''
@@ -363,13 +363,13 @@ def field_of_length(length, dict_list):
 
     Parameters
     -----------
-    length: The length of the dictionary in Bytes
+    :param length: The length of the dictionary in Bytes
 
-    dict_list: List of potential Dictionary
+    :param dict_list: List of potential Dictionary
 
     Returns
     --------
-    dict: The dictionary from the dict list with corresponding length
+    :return dict: The dictionary from the dict list with corresponding length
 
     '''
     if type(dict_list) is not type([]):
@@ -401,13 +401,13 @@ def apply_type_and_time(length, packet_data):
 
     Parameters
     ----------
-    length: length to calculate packet type and subtype.
+    :param length: length to calculate packet type and subtype.
 
-    packet_data: extracted packet data
+    :param packet_data: extracted packet data
 
     Returns
     --------
-    packet_data: changed packet data, the return is not strictly necissary
+    :return packet_data: changed packet data, the return is not strictly necissary
     """
     blank = True
     for (field, data) in packet_data.items():
@@ -443,12 +443,12 @@ def convert_unix_time(unixtime):
 
     Paramters
     ---------
-    unixtime : int
+    :param unixtime : int
         The UNIX time number to be converted
 
     Returns
     --------
-    human-readable-time : string
+    :return human-readable-time : string
         The UNIX time converted to year-month-day, hour-minute-second format
     '''
 
@@ -485,29 +485,13 @@ def process_cpap_binary(packets, filehandle):
 
     Input
     ----------
-    packets: array of dictionaries containing the following info
-    filehandle: rest of data
+    :param packets: array of dictionaries containing the following info
+    :param: filehandle: rest of data
 
     Returns : data
     --------
-    data - dictonary of dictionaries with the following format
-    {
-        (data type int) : {
-                        no packets :
-                        values :
-                        stop_times :
-                        }
-
-        (data type int) : {
-                        no packets :
-                        values :
-                        stop_times :
-                        }
-    }
-
-    Notes
-    ------
-
+    :return packets with appended inforamtion to each packet
+        information appended includes data_vals and stop_times
     '''
     data = {}
     uint32_ctype = 'I'
@@ -535,6 +519,7 @@ def process_cpap_binary(packets, filehandle):
                     val+=256
                 data_vals.append(val)
             packet["data_vals"] = data_vals
+
             # Read stop times
             data_vals = []
             if ptypeInfo['stop_times']:
@@ -547,11 +532,33 @@ def process_cpap_binary(packets, filehandle):
             packet["stop_times"] = data_vals
     return packets
 
+
+def blankDataFill(startTime, endTime, ptype_start, interval):
+    '''
+    Fills in blank data for data ptype if started or ended after or before
+    session start time or end time respectively
+
+    :param startTime: start time of array -- type: datetime
+    :param endTime: end time of array -- type: datetime
+    :param ptype_start: when the ptype starts -- type: datetime
+    :param interval: interval of times taken in seconds, e.g. 0.2 -- type float
+    :return array of 2 arrays with proper number of elements according to interval
+             first is stop_times, second is data_vals
+    '''
+    data_vals = []
+    stop_times = []
+    microInSec = 1000000
+    for sec in range(int(((startTime - endTime).seconds - 1) / interval)):
+        data_vals.append("")
+        time = ptype_start + timedelta(microseconds=sec / interval * microInSec)
+        stop_times.append(time.strftime('%m-%d-%y_%H:%M:%S.%f'))
+    return [stop_times, data_vals]
+
 def decompress_data(all_data, header):
     '''
     decompresses data
-    Input : all_data -- output from process_cpap_binary
-    Output : raw_data -- dictionary key = cpap string type, value = {'Values' : values, "Times": times
+    :param all_data: output from process_cpap_binary
+    :return raw_data: dictionary key = cpap string type, value = {'Values' : values, "Times": times
     '''
     # TODO get config file to determine desired data to be decompressed
     # ptypes to be decompressed
@@ -559,7 +566,6 @@ def decompress_data(all_data, header):
     microInSec = 1000000
     raw_data = {}
     sessionStart = datetime.strptime(header['Start time'], '%Y-%m-%d_%H-%M-%S')
-    sessionEnd = datetime.strptime(header['End time'], '%Y-%m-%d_%H-%M-%S')
     # Decompress each type desired data type
     for type in desired:
         ptype_info = CPAP_DATA_TYPE.get(type, {'stop_times':True,  'ctype':'H',  'name':"Unknown"})
@@ -573,34 +579,21 @@ def decompress_data(all_data, header):
         decomp_data = []
         time_tags = []
         interval = ptype_info["interval"]
+        intervalStep = int(interval * microInSec)
 
         # create stop times if none
         if not ptype_info['stop_times']:
             ptype_data['stop_times'] = [(j+1)*interval for j in range(len(ptype_data['data_vals']))]
 
-        # pre fill empty values up until data start
-        intervalStep = int(interval * microInSec)
-        for sec in range(int(((ptype_start - sessionStart).seconds-1)/interval)):
-            decomp_data.append("")
-            time = ptype_start+timedelta(microseconds=sec/interval*microInSec)
-            time_tags.append(time.strftime('%m-%d-%y_%H:%M:%S.%f'))
-
         # match data with time tags
-        interBegin = (sessionStart - datetime.min).seconds*microInSec + (sessionStart - datetime.min).microseconds
-        counterMicroSec = interBegin
+        counterMicroSec = 0
         for stop, val in zip(ptype_data["stop_times"], ptype_data["data_vals"]):
-            intervalEnd = int(interBegin + microInSec*stop)
+            intervalEnd = int(microInSec*stop)
             for i in range(counterMicroSec,intervalEnd, intervalStep):
                 time = ptype_start + timedelta(microseconds=i)
                 time_tags.append(time.strftime('%m-%d-%y_%H:%M:%S.%f'))
                 decomp_data.append(val)
             counterMicroSec = intervalEnd
-
-        # post fill empty values until data end
-        for sec in range(int((sessionEnd - ptype_end).seconds/interval)-1):
-            time = ptype_start + timedelta(microseconds=sec / interval * microInSec)
-            time_tags.append(time.strftime('%m-%d-%y_%H:%M:%S.%f'))
-            decomp_data.append("")
 
         raw_data[CPAP_DATA_TYPE[type]["name"]] = {"Times"  : time_tags,
                                                 "Values" : decomp_data}
@@ -722,8 +715,4 @@ if __name__ == '__main__':
     data = data_from_packets(PACKETS)
     data = process_cpap_binary(data, DATA_FILE)
     raw = decompress_data(data, header)
-    with open("test.txt", 'w') as file:
-        file.write(str(raw))
-        file.write(str(header))
-        file.write(str(data))
     exit()
