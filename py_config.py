@@ -37,7 +37,7 @@ class config(dict):
         TMP_PATH/py_config.json
         """
         if name == "":
-            self.config_path = path.join(tempfile.gettempdir(), "py_config.json")
+            self.config_path = path.join(tempfile.gettempdir(), "cpap_config.json")
         else:
             if name[-5:].lower() != ".json":
                 warnings.warn("File {} is not a json file.".format(name))

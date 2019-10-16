@@ -67,8 +67,8 @@ class TestSetupArgs(unittest.TestCase):
 class TestReadPacket(unittest.TestCase):
     '''
     Tests the read_packet method, which takes two arguments, data_file and
-    delimeter. data_file is a file, created by the read_file method, that
-    contains multiple packets, each separated by delimeter. This method
+    delimiter. data_file is a file, created by the read_file method, that
+    contains multiple packets, each separated by delimiter. This method
     returns the first complete packet it finds within data file, or it returns
     nothing if no packet is found. read_packet leaves the seak point of
     data_file at the beginning of the next packet.
@@ -85,50 +85,50 @@ class TestReadPacket(unittest.TestCase):
             data_file is empty
         testDataFileEndsNoDelimeter
             Tests whether read_file properly returns a packet that did not end
-            with a delimeter. In this scenario, a warning should be raised
+            with a delimiter. In this scenario, a warning should be raised
         testEmptyDelimeter
             Tests whether read_file properly returns the entire packet,
-            unmodified if delimeter = b''
+            unmodified if delimiter = b''
         testInvalidDelimeter
-            Tests whether read_file properly raises a ValueError if delimeter
+            Tests whether read_file properly raises a ValueError if delimiter
             is not of type bytes
     '''
 
     def test_normal(self):
         data_file = io.BytesIO(b'\x34\x32\xff\xff\xff\xff\x42')
-        delimeter = b'\xff\xff\xff\xff'
-        packet = cpap_extraction.read_packet(data_file, delimeter)
+        delimiter = b'\xff\xff\xff\xff'
+        packet = cpap_extraction.read_packet(data_file, delimiter)
 
         self.assertEqual(packet, b'\x34\x32')
 
     def test_empty(self):
         data_file = io.BytesIO(b'')
-        delimeter = b'\xff\xff\xff\xff'
-        packet = cpap_extraction.read_packet(data_file, delimeter)
+        delimiter = b'\xff\xff\xff\xff'
+        packet = cpap_extraction.read_packet(data_file, delimiter)
 
         self.assertEqual(packet, b'')
 
-    def test_data_file_ends_no_delimeter(self):
+    def test_data_file_ends_no_delimiter(self):
         data_file = io.BytesIO(b'\x34\x32')
-        delimeter = b'\xff\xff\xff\xff'
-        packet = cpap_extraction.read_packet(data_file, delimeter)
+        delimiter = b'\xff\xff\xff\xff'
+        packet = cpap_extraction.read_packet(data_file, delimiter)
 
         self.assertEqual(packet, b'\x34\x32')
 
-    def test_empty_delimeter(self):
+    def test_empty_delimiter(self):
         data_file = io.BytesIO(b'\x34\x32\xff\xff\xff\xff\x42')
-        delimeter = b''
+        delimiter = b''
 
         with self.assertWarns(Warning):
-            packet = cpap_extraction.read_packet(data_file, delimeter)
+            packet = cpap_extraction.read_packet(data_file, delimiter)
             self.assertEqual(packet, b'\x34\x32\xff\xff\xff\xff\x42')
 
-    def test_invalid_delimeter(self):
+    def test_invalid_delimiter(self):
         data_file = io.BytesIO(b'\x34\x32\xff\xff\xff\xff\x42')
-        delimeter = 'test'
+        delimiter = 'test'
 
         with self.assertRaises(TypeError):
-            packet = cpap_extraction.read_packet(data_file, delimeter)
+            packet = cpap_extraction.read_packet(data_file, delimiter)
 
 
 class TestSplitPackets(unittest.TestCase):
@@ -140,23 +140,23 @@ class TestSplitPackets(unittest.TestCase):
     -------
         testNormal
             Tests a data_file containing two packets, separated by a
-            delimeter of \xff\xff\xff\xff. Ensures that split_packets returns
+            delimiter of \xff\xff\xff\xff. Ensures that split_packets returns
             an array of size 2, and that the first index of the array contains
             the first packet, and the second index of the array contains the
             second packet
 
     Notes
     ------
-    Other cases that may seem necessary to test, such as if the delimeter is
-    invalid, the data file does not contain the delimeter, the data file is
+    Other cases that may seem necessary to test, such as if the delimiter is
+    invalid, the data file does not contain the delimiter, the data file is
     empty, etc. are tested in testReadPacket
     '''
 
     def test_normal(self):
         data_file = io.BytesIO(b'\x03\x0c\x01\x00\xff\xff\xff\xff\x45')
-        delimeter = b'\xff\xff\xff\xff'
+        delimiter = b'\xff\xff\xff\xff'
 
-        packets = cpap_extraction.split_packets(data_file, delimeter)
+        packets = cpap_extraction.split_packets(data_file, delimiter)
         self.assertEqual(len(packets), 2)
         self.assertEqual(packets[0], b'\x03\x0c\x01\x00')
         self.assertEqual(packets[1], b'\x45')

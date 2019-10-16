@@ -15,8 +15,6 @@ C_TYPES : dictionary {char: int}
     A dictionary containing the relavent number of bytes for each C Type.
     See https://docs.python.org/3/library/struct.html
 
-VERBOSE : bool
-    If True, be VERBOSE
 '''
 import argparse                 # For command line arguments
 import os                       # For file IO
@@ -26,6 +24,8 @@ from datetime import datetime, timedelta   # For converting UNIX time
 import warnings                 # For raising warnings
 import re                       # For ripping unixtimes out of strings
 import sys
+from test_config import GLOBAL_CONFIG as CONFIG
+
 
 if sys.version_info < (3,6):
     print("""Error Version Python version 3.6 of higher required.\n
@@ -48,10 +48,6 @@ def setup_args():
     DESTINATION : path (optional)
         The directory to place the extracted files
 
-    VERBOSE : Boolean (optional)
-        If True, tell the user how long the extraction took, how big the SOURCE
-        file(s) were, and how big each extracted file(s) is.
-
     Returns
     -------
     source : path
@@ -60,8 +56,6 @@ def setup_args():
     destination : path
         The file path of the output file
     '''
-    global VERBOSE
-    global DEBUG
 
     parser = argparse.ArgumentParser(description='CPAP_data_extraction')
     parser.add_argument('source', nargs=1, help='path to CPAP data')
@@ -73,13 +67,14 @@ def setup_args():
     args = parser.parse_args()
     source = args.source[0]
     destination = args.destination[0]
-    VERBOSE = args.v
-    DEBUG = args.d
+    CONFIG["Verbose"] = args.v
+
+    CONFIG["Debug"] = args.d
 
     return source, destination
 
 
-def extract_file(source_file, destination = '.', verbose = False, debug = False ):
+def extract_file(source_file, destination = '.', configfile ="" ):
     """
     This runs the extraction algorithm as a one call function to run the whole
     module on a file.
@@ -97,11 +92,7 @@ def extract_file(source_file, destination = '.', verbose = False, debug = False 
     packet_data: [Array Dict]
         An array of extracted dictionaries containg packet data
     """
-    global VERBOSE
-    global DEBUG
-    VERBOSE = verbose
-    DEBUG = debug
-
+    CONFIG.load(configfile)
     data_file = open_file(source_file)
     packets = split_packets(data_file)
     header = extract_header(packets[0])
@@ -131,7 +122,7 @@ def open_file(source):
         An in memory copy of the read-in file.
     '''
 
-    if VERBOSE:
+    if CONFIG["Verbose"]:
         print('Reading in {}'.format(source))
 
     if not os.path.isfile(source):
@@ -147,7 +138,7 @@ def open_file(source):
         raise TypeError("ERROR: source file {} is not a binary file.".format(source))
 
 
-def split_packets(input_file, delimeter = b'\xff\xff\xff\xff'):
+def split_packets(input_file, delimiter = b'\xff\xff\xff\xff'):
     '''
     Using the read_packet method, returns all packet_array found in input_file
     in an array of packet_array.
@@ -158,9 +149,9 @@ def split_packets(input_file, delimeter = b'\xff\xff\xff\xff'):
         A file object created by read_file(), this object contains the data
         packet_array to be read
 
-    delimeter : bytes
+    delimiter : bytes
         The 'separator' of the packet_array in input_file. For .001 files, the
-        delimeter is b'\xff\xff\xff\xff'
+        delimiter is b'\xff\xff\xff\xff'
 
     Attributes
     ----------
@@ -173,7 +164,7 @@ def split_packets(input_file, delimeter = b'\xff\xff\xff\xff'):
     packet_array = []
     while True:
         pos = input_file.tell()
-        packet = read_packet(input_file, delimeter)
+        packet = read_packet(input_file, delimiter)
         if packet == b'' or len(packet) > 444:
             input_file.seek(pos)
             break
@@ -182,7 +173,7 @@ def split_packets(input_file, delimeter = b'\xff\xff\xff\xff'):
     return packet_array
 
 
-def read_packet(input_file, delimeter):
+def read_packet(input_file, delimiter):
     '''
     The packets are seperated but due to uneven packet length the input file
     must be read one byte at a time.
@@ -193,9 +184,9 @@ def read_packet(input_file, delimeter):
         A file object created by read_file(), this object contains the data
         packets to be read
 
-    delimeter : bytes
+    delimiter : bytes
         The 'separator' of the packets in input_file. For .001 files, the
-        delimeter is b'\xff\xff\xff\xff'
+        delimiter is b'\xff\xff\xff\xff'
 
     Attributes
     ----------
@@ -203,24 +194,24 @@ def read_packet(input_file, delimeter):
         The complete packet of bytes to be returned
 
     byte : bytes
-        A single byte of data. If this byte isn't part of the delimeter, it
+        A single byte of data. If this byte isn't part of the delimiter, it
         gets appended to packet
     '''
-    if not isinstance(delimeter, bytes):
+    if not isinstance(delimiter, bytes):
         raise TypeError('Delimeter {} is invalid, it must be of type bytes')
 
     packet = b''
-    if delimeter == b'':
+    if delimiter == b'':
         warnings.warn('WARNING: Delimeter is empty')
-        first_byte_of_delimeter = b''
+        first_byte_of_delimiter = b''
     else:
-        first_byte_of_delimeter = delimeter[0].to_bytes(1, 'little')
+        first_byte_of_delimiter = delimiter[0].to_bytes(1, 'little')
 
     while True:
         byte = input_file.read(1)
-        if byte == first_byte_of_delimeter:
+        if byte == first_byte_of_delimiter:
             input_file.seek(-1, 1)
-            if input_file.read(len(delimeter)) == delimeter:
+            if input_file.read(len(delimiter)) == delimiter:
                 break
         elif byte == b'':
             break
@@ -299,7 +290,7 @@ def extract_packet(packet, fields):
     data = {}
 
     for field in fields:
-        if VERBOSE:
+        if CONFIG["Verbose"]:
             print('Extracting {} from {}'.format(field, source))
 
         c_type = fields.get(field)
@@ -308,7 +299,7 @@ def extract_packet(packet, fields):
         bytes_to_be_extracted = packet[:number_of_bytes]
         del packet[:number_of_bytes]
 
-        if DEBUG:
+        if CONFIG["Debug"]:
             print('Bytes in {}: {}'.format(field, bytes_to_be_extracted))
             print('Remaining bytes in packet: {}'.format(packet))
 
@@ -349,7 +340,7 @@ def data_from_packets(packets, dict_list = []):
             data_array.append(packet_data)
 
         except KeyError:
-            if DEBUG:
+            if CONFIG["Debug"]:
                 warnings.warn('Packet {} was not extracted'.format(packet))
 
     return data_array
@@ -428,7 +419,7 @@ def apply_type_and_time(length, packet_data):
         else:
             packet_data.update({'subtype': 3})
 
-    if VERBOSE:
+    if CONFIG["Verbose"]:
         print("Packet type {}.{} extracted.".format(
                 packet_data.get("type"), packet_data.get("subtype") ))
 
@@ -609,8 +600,6 @@ def decompress_data(all_data, header):
 
 
 # Global variables
-VERBOSE = False
-DEBUG = False
 EXTRACTION_FIELDS = [
         # Type 0
             {   'type':'B',
@@ -715,12 +704,12 @@ CPAP_DATA_TYPE = {# bool if stop times included, associated ctype for data vals,
 
 if __name__ == '__main__':
     source, destination = setup_args()
-    DATA_FILE = open_file(source)
-    PACKET_DELIMETER = b'\xff\xff\xff\xff'
-    PACKETS = split_packets(DATA_FILE, PACKET_DELIMETER)
-    header = extract_header(PACKETS[0])
-    data = data_from_packets(PACKETS)
-    data = process_cpap_binary(data, DATA_FILE)
+    data_file = open_file(source)
+    delimitor = b'\xff\xff\xff\xff'
+    packets = split_packets(data_file, delimitor)
+    header = extract_header(packets[0])
+    data = data_from_packets(packets)
+    data = process_cpap_binary(data, data_file)
     raw = decompress_data(data, header)
     with open("test.txt", 'w') as file:
         file.write(str(header))
