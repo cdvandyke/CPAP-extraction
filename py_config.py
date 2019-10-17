@@ -16,6 +16,10 @@ class config(dict):
         super().__init__(*args, **kwargs)
 
     def load(self, name = ""):
+        """
+        Load in the saved dictionary from the saved file path or a file that the user provides.
+
+        """
         self.set_file_path(name)
 
         if not path.isfile(self.config_path):

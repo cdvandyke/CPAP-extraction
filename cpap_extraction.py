@@ -20,11 +20,11 @@ import argparse                 # For command line arguments
 import os                       # For file IO
 import io
 import struct                   # For unpacking binary data
-from datetime import datetime, timedelta   # For converting UNIX time
+from datetime import datetime, timedelta # For converting UNIX time
 import warnings                 # For raising warnings
 import re                       # For ripping unixtimes out of strings
 import sys
-from test_config import GLOBAL_CONFIG as CONFIG
+from py_config import GLOBAL_CONFIG as CONFIG
 
 
 if sys.version_info < (3,6):
@@ -68,7 +68,6 @@ def setup_args():
     source = args.source[0]
     destination = args.destination[0]
     CONFIG["Verbose"] = args.v
-
     CONFIG["Debug"] = args.d
 
     return source, destination
@@ -705,8 +704,8 @@ CPAP_DATA_TYPE = {# bool if stop times included, associated ctype for data vals,
 if __name__ == '__main__':
     source, destination = setup_args()
     data_file = open_file(source)
-    delimitor = b'\xff\xff\xff\xff'
-    packets = split_packets(data_file, delimitor)
+    delimiter = b'\xff\xff\xff\xff'
+    packets = split_packets(data_file, delimiter)
     header = extract_header(packets[0])
     data = data_from_packets(packets)
     data = process_cpap_binary(data, data_file)
