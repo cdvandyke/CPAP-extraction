@@ -56,19 +56,33 @@ def setup_args():
     :return destination : path
         The file path of the output file
     '''
-
+    global VERBOSE
+    global DEBUG
     parser = argparse.ArgumentParser(description='CPAP_data_extraction')
     parser.add_argument('source', nargs=1, help='path to CPAP data')
     parser.add_argument('--destination', nargs=1, default='.',
                         help='path to place extracted files')
+    parser.add_argument('--config', nargs=1, default='',
+                        help='configuration file')
     parser.add_argument('-v', action='store_true', help='be VERBOSE')
     parser.add_argument('-d', action='store_true', help='debug mode')
 
     args = parser.parse_args()
     source = args.source[0]
     destination = args.destination[0]
-    CONFIG["Verbose"] = args.v
-    CONFIG["Debug"] = args.d
+    print(type(args.config))
+    configname = args.config[0]
+
+    CONFIG.load(configname)
+    if 'Verbose' in CONFIG:
+        VERBOSE = CONFIG['Verbose']
+    else:
+        VERBOSE = args.v
+
+    if 'Debug' in CONFIG:
+        DEBUG = CONFIG['Debug']
+    else:
+        DEBUG = args.d
 
     return source, destination
 
@@ -91,7 +105,6 @@ def extract_file(source_file, destination = '.', configfile ="" ):
     :return packet_data: [Array Dict]
         An array of extracted dictionaries containg packet data
     """
-    CONFIG.load(configfile)
     data_file = open_file(source_file)
     packets = split_packets(data_file)
     header = extract_header(packets[0])
@@ -121,7 +134,7 @@ def open_file(source):
         An in memory copy of the read-in file.
     '''
 
-    if CONFIG["Verbose"]:
+    if VERBOSE:
         print('Reading in {}'.format(source))
 
     if not os.path.isfile(source):
@@ -289,7 +302,7 @@ def extract_packet(packet, fields):
     data = {}
 
     for field in fields:
-        if CONFIG["Verbose"]:
+        if VERBOSE:
             print('Extracting {} from {}'.format(field, source))
 
         c_type = fields.get(field)
@@ -298,7 +311,7 @@ def extract_packet(packet, fields):
         bytes_to_be_extracted = packet[:number_of_bytes]
         del packet[:number_of_bytes]
 
-        if CONFIG["Debug"]:
+        if DEBUG:
             print('Bytes in {}: {}'.format(field, bytes_to_be_extracted))
             print('Remaining bytes in packet: {}'.format(packet))
 
@@ -339,7 +352,7 @@ def data_from_packets(packets, dict_list = []):
             data_array.append(packet_data)
 
         except KeyError:
-            if CONFIG["Debug"]:
+            if DEBUG:
                 warnings.warn('Packet {} was not extracted'.format(packet))
 
     return data_array
@@ -418,7 +431,7 @@ def apply_type_and_time(length, packet_data):
         else:
             packet_data.update({'subtype': 3})
 
-    if CONFIG["Verbose"]:
+    if VERBOSE:
         print("Packet type {}.{} extracted.".format(
                 packet_data.get("type"), packet_data.get("subtype") ))
 
@@ -589,9 +602,15 @@ def decompress_data(all_data, header):
                                                 "Values" : decomp_data}
     return raw_data
 
-
+def data_to_csv(packet_data):
+    with open('test.csv', 'w') as f:
+        for each in packet_data:
+            for key in each.keys():
+                f.write("%S,%s\n"%(key, each[key]))
 
 # Global variables
+VERBOSE = False
+DEBUG = False
 EXTRACTION_FIELDS = [
         # Type 0
             {   'type':'B',
@@ -700,7 +719,11 @@ if __name__ == '__main__':
     delimiter = b'\xff\xff\xff\xff'
     packets = split_packets(data_file, delimiter)
     header = extract_header(packets[0])
-    data = data_from_packets(packets)
-    data = process_cpap_binary(data, data_file)
+    packet_data = data_from_packets(packets)
+    data = process_cpap_binary(packet_data, data_file)
+    with open('that.txt','w') as file:
+        for d in data:
+            file.write("\n{}".format(d))
     raw = decompress_data(data, header)
+    data_to_csv(raw)
     exit()
