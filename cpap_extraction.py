@@ -26,6 +26,7 @@ from datetime import datetime, timedelta   # For converting UNIX time
 import warnings                 # For raising warnings
 import re                       # For ripping unixtimes out of strings
 import sys
+import csv
 
 if sys.version_info < (3,6):
     print("""Error Version Python version 3.6 of higher required.\n
@@ -106,7 +107,6 @@ def extract_file(source_file, destination = '.', verbose = False, debug = False 
     packets = split_packets(data_file)
     header = extract_header(packets[0])
     packet_data = data_from_packets(packets)
-    data_to_csv(packet_data)
 
     return header, packet_data
 
@@ -601,11 +601,13 @@ def decompress_data(all_data, header):
     return raw_data
 
 ##############################################################
-def data_to_csv(packet_data):
-    with open('test.csv', 'w') as f:
-        for each in packet_data:
-            for key in each.keys():
-                f.write("%S,%s\n"%(key, each[key]))
+def data_to_csv(waveform):
+    try:
+        with open('test.csv', 'w') as f:
+            for key in waveform.keys():
+                f.write("%s,%s\n"%(key, waveform[key]))
+    except IOError:
+        print("CSV I/O Error")
 ##############################################################
 
 # Global variables
@@ -722,4 +724,5 @@ if __name__ == '__main__':
     data = data_from_packets(PACKETS)
     data = process_cpap_binary(data, DATA_FILE)
     raw = decompress_data(data, header)
+    data_to_csv(raw['Breathing Flow Rate Waveform'])
     exit()
