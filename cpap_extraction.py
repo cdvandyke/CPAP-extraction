@@ -604,8 +604,14 @@ def decompress_data(all_data, header):
 def data_to_csv(waveform):
     try:
         with open('test.csv', 'w') as f:
-            for key in waveform.keys():
-                f.write("%s,%s\n"%(key, waveform[key]))
+            times = waveform['Times']
+            vals  = waveform['Values']
+            fieldnames = ['TIMES', 'VALUES']
+
+            csv.DictWriter(f, fieldnames = fieldnames).writeheader()
+
+            for each in range(len(times)):
+                f.write("%s,%s\n"%(times[each], vals[each]))
     except IOError:
         print("CSV I/O Error")
 ##############################################################
