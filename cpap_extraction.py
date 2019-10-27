@@ -153,7 +153,7 @@ def open_file(source):
         raise TypeError("ERROR: source file {} is not a binary file.".format(source))
 
 
-def split_packets(input_file, delimiter = b'\xff\xff\xff\xff'):
+def split_packets(input_file, number_of_packets, delimiter = b'\xff\xff\xff\xff'):
     '''
     Using the read_packet method, returns all packet_array found in input_file
     in an array of packet_array.
@@ -177,12 +177,11 @@ def split_packets(input_file, delimiter = b'\xff\xff\xff\xff'):
         The packet array to be returned
     '''
     packet_array = []
-    while True:
+    for i in range(number_of_packets):
         pos = input_file.tell()
         packet = read_packet(input_file, delimiter)
         if packet == b'' or len(packet) > 444:
-            input_file.seek(pos)
-            break
+            raise AssertionError("{} packets extracted, Expected {} packets".format(i, number_of_packets))
         packet_array.append(packet)
 
     return packet_array
@@ -235,7 +234,7 @@ def read_packet(input_file, delimiter):
     return bytearray(packet)
 
 
-def extract_header(packet):
+def extract_header(input_file):
     '''
     TODO: Test
     Uses extract_packet to extract the header information from a packet.
@@ -267,13 +266,20 @@ def extract_header(packet):
               'Machine type': 'H',
               'Data size': 'I',
               'CRC': 'H',
-              'MCSize': 'H'}
+              'Number of Packets': 'H'}
 
-    header = extract_packet(packet, fields)
-
-    header["Start time"] = convert_unix_time(header["Start time"])
-    header["End time"] = convert_unix_time(header["End time"])
-
+    header = {}
+    for k,v in fields.items():
+        byte_size = C_TYPES[v]
+        byte = input_file.read(byte_size)
+        format  = "<" + v
+        data_value = struct.unpack(format , byte)[0]
+        if CONFIG["Verbose"]:
+            print("Pair added to header {}: {}".format(k, data_value))
+        header.update({k: data_value})
+        
+    header['Start time'] = convert_unix_time(header['Start time'])
+    header['End time'] = convert_unix_time(header['End time'])
     return header
 
 
@@ -715,8 +721,8 @@ if __name__ == '__main__':
     else:
         data_file = open_file(source)
         delimiter = b'\xff\xff\xff\xff'
-        packets = split_packets(data_file, delimiter)
-        header = extract_header(packets[0])
+        header = extract_header(data_file)
+        packets = split_packets(data_file, header["Number of Packets"], delimiter)
         packet_data = data_from_packets(packets)
         data = process_cpap_binary(packet_data, data_file)
         with open('that.txt','w') as file:

@@ -65,7 +65,7 @@ class config(dict):
             warnings.warn("Error: Configuration not saved")
 
 """
-GLOBAL_CONFIG is for use as an importable singleton config file.
+CONFIG is for use as an importable singleton config file.
 """
 CONFIG = config()
 
