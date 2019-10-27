@@ -24,7 +24,7 @@ from datetime import datetime, timedelta # For converting UNIX time
 import warnings                 # For raising warnings
 import re                       # For ripping unixtimes out of strings
 import sys
-from py_config import GLOBAL_CONFIG as CONFIG
+from py_config import CONFIG
 
 
 if sys.version_info < (3,6):
@@ -56,33 +56,36 @@ def setup_args():
     :return destination : path
         The file path of the output file
     '''
-    global VERBOSE
-    global DEBUG
+    source = ""
     parser = argparse.ArgumentParser(description='CPAP_data_extraction')
-    parser.add_argument('source', nargs=1, help='path to CPAP data')
+    parser.add_argument('file', nargs=1, help='path to 001 file or config file')
     parser.add_argument('--destination', nargs=1, default='.',
                         help='path to place extracted files')
-    parser.add_argument('--config', nargs=1, default='',
-                        help='configuration file')
-    parser.add_argument('-v', action='store_true', help='be VERBOSE')
+    parser.add_argument('-v', action='store_true', help='be verbose')
     parser.add_argument('-d', action='store_true', help='debug mode')
 
     args = parser.parse_args()
-    source = args.source[0]
-    destination = args.destination[0]
-    print(type(args.config))
-    configname = args.config[0]
+    file = args.file[0]
 
-    CONFIG.load(configname)
-    if 'Verbose' in CONFIG:
-        VERBOSE = CONFIG['Verbose']
-    else:
-        VERBOSE = args.v
 
-    if 'Debug' in CONFIG:
-        DEBUG = CONFIG['Debug']
+
+    if file[:-5].lower() == ".json":
+        CONFIG.load(file)
+        source = CONFIG["Load Path"]
+        destination = CONFIG["Save Path"]
+
+
     else:
-        DEBUG = args.d
+        source = file
+        destination = args.destination[0]
+
+    CONFIG.setdefault("Verbose", args.v)
+    CONFIG.setdefault("Debug", args.d)
+    CONFIG.setdefault("As Directory", False)
+    if CONFIG["As Directory"] != os.path.isdir(source) :
+        raise FileNotFoundError("No directory provided.")
+    if not CONFIG["As Directory"] and source[-4:] !=".001":
+        raise FileNotFoundError("No valid .001 file found")
 
     return source, destination
 
@@ -134,7 +137,7 @@ def open_file(source):
         An in memory copy of the read-in file.
     '''
 
-    if VERBOSE:
+    if CONFIG["Verbose"]:
         print('Reading in {}'.format(source))
 
     if not os.path.isfile(source):
@@ -214,8 +217,7 @@ def read_packet(input_file, delimiter):
 
     packet = b''
     if delimiter == b'':
-        warnings.warn('WARNING: Delimeter is empty')
-        first_byte_of_delimiter = b''
+        raise ValueError("Deliminator is empty")
     else:
         first_byte_of_delimiter = delimiter[0].to_bytes(1, 'little')
 
@@ -302,7 +304,7 @@ def extract_packet(packet, fields):
     data = {}
 
     for field in fields:
-        if VERBOSE:
+        if CONFIG["Verbose"]:
             print('Extracting {} from {}'.format(field, source))
 
         c_type = fields.get(field)
@@ -311,7 +313,7 @@ def extract_packet(packet, fields):
         bytes_to_be_extracted = packet[:number_of_bytes]
         del packet[:number_of_bytes]
 
-        if DEBUG:
+        if CONFIG["Debug"]:
             print('Bytes in {}: {}'.format(field, bytes_to_be_extracted))
             print('Remaining bytes in packet: {}'.format(packet))
 
@@ -352,7 +354,7 @@ def data_from_packets(packets, dict_list = []):
             data_array.append(packet_data)
 
         except KeyError:
-            if DEBUG:
+            if CONFIG["Debug"]:
                 warnings.warn('Packet {} was not extracted'.format(packet))
 
     return data_array
@@ -431,7 +433,7 @@ def apply_type_and_time(length, packet_data):
         else:
             packet_data.update({'subtype': 3})
 
-    if VERBOSE:
+    if CONFIG["Verbose"]:
         print("Packet type {}.{} extracted.".format(
                 packet_data.get("type"), packet_data.get("subtype") ))
 
@@ -602,15 +604,8 @@ def decompress_data(all_data, header):
                                                 "Values" : decomp_data}
     return raw_data
 
-def data_to_csv(packet_data):
-    with open('test.csv', 'w') as f:
-        for each in packet_data:
-            for key in each.keys():
-                f.write("%S,%s\n"%(key, each[key]))
 
 # Global variables
-VERBOSE = False
-DEBUG = False
 EXTRACTION_FIELDS = [
         # Type 0
             {   'type':'B',
@@ -715,15 +710,16 @@ CPAP_DATA_TYPE = {# bool if stop times included, associated ctype for data vals,
 
 if __name__ == '__main__':
     source, destination = setup_args()
-    data_file = open_file(source)
-    delimiter = b'\xff\xff\xff\xff'
-    packets = split_packets(data_file, delimiter)
-    header = extract_header(packets[0])
-    packet_data = data_from_packets(packets)
-    data = process_cpap_binary(packet_data, data_file)
-    with open('that.txt','w') as file:
-        for d in data:
-            file.write("\n{}".format(d))
-    raw = decompress_data(data, header)
-    data_to_csv(raw)
-    exit()
+    if CONFIG.get("As Directory", False):
+        pass
+    else:
+        data_file = open_file(source)
+        delimiter = b'\xff\xff\xff\xff'
+        packets = split_packets(data_file, delimiter)
+        header = extract_header(packets[0])
+        packet_data = data_from_packets(packets)
+        data = process_cpap_binary(packet_data, data_file)
+        with open('that.txt','w') as file:
+            for d in data:
+                file.write("\n{}".format(d))
+        raw = decompress_data(data, header)
