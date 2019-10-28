@@ -5,7 +5,7 @@ Note to avoid duplication all keys must be strings.
 Ezra Dudden
 '''
 from os import path
-import json
+import commentjson as json
 import tempfile
 import warnings                 # For raising warnings
 
@@ -16,6 +16,10 @@ class config(dict):
         super().__init__(*args, **kwargs)
 
     def load(self, name = ""):
+        """
+        Load in the saved dictionary from the saved file path or a file that the user provides.
+
+        """
         self.set_file_path(name)
 
         if not path.isfile(self.config_path):
@@ -24,7 +28,6 @@ class config(dict):
 
         with open(self.config_path, 'r') as file:
             s = file.read()
-
         dictionary = json.loads(s)
         self.update(dictionary)
 
@@ -37,7 +40,7 @@ class config(dict):
         TMP_PATH/py_config.json
         """
         if name == "":
-            self.config_path = path.join(tempfile.gettempdir(), "py_config.json")
+            self.config_path = path.join("cpap_config.json")
         else:
             if name[-5:].lower() != ".json":
                 warnings.warn("File {} is not a json file.".format(name))
@@ -50,8 +53,6 @@ class config(dict):
             else:
                 warnings.warn("The file {} does not yet exist, but will be made.".format(self.config_path))
 
-        return str(self.config_path)
-
     def save(self):
         """
         Saves the file at the already provided path
@@ -63,12 +64,12 @@ class config(dict):
             warnings.warn("Error: Configuration not saved")
 
 """
-GLOBAL_CONFIG is for use as an importable singleton config file.
+CONFIG is for use as an importable singleton config file.
 """
-GLOBAL_CONFIG = config()
+CONFIG = config()
 
 if __name__ == "__main__":
     c = config()
-    c.load("sample_config.json")
+    c.load("cpap_config.json")
     print(str(c))
     c.save()
