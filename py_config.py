@@ -28,7 +28,6 @@ class config(dict):
 
         with open(self.config_path, 'r') as file:
             s = file.read()
-
         dictionary = json.loads(s)
         self.update(dictionary)
 

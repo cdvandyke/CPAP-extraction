@@ -67,23 +67,22 @@ def setup_args():
     args = parser.parse_args()
     file = args.file[0]
 
-
-
-    if file[:-5].lower() == ".json":
+    if file[-5:].lower() == ".json":
         CONFIG.load(file)
         source = CONFIG["Load Path"]
         destination = CONFIG["Save Path"]
 
-
     else:
         source = file
         destination = args.destination[0]
+        CONFIG.setdefault("As Directory", False)
 
     CONFIG.setdefault("Verbose", args.v)
     CONFIG.setdefault("Debug", args.d)
-    CONFIG.setdefault("As Directory", False)
+
     if CONFIG["As Directory"] != os.path.isdir(source) :
         raise FileNotFoundError("No directory provided.")
+
     if not CONFIG["As Directory"] and source[-4:] !=".001":
         raise FileNotFoundError("No valid .001 file found")
 
@@ -277,7 +276,7 @@ def extract_header(input_file):
         if CONFIG["Verbose"]:
             print("Pair added to header {}: {}".format(k, data_value))
         header.update({k: data_value})
-        
+
     header['Start time'] = convert_unix_time(header['Start time'])
     header['End time'] = convert_unix_time(header['End time'])
     return header
@@ -542,28 +541,6 @@ def process_cpap_binary(packets, filehandle):
                     data_vals.append(extracted_data/1000)
             packet["stop_times"] = data_vals
     return packets
-
-
-def blankDataFill(startTime, endTime, ptype_start, interval):
-    '''
-    Fills in blank data for data ptype if started or ended after or before
-    session start time or end time respectively
-
-    :param startTime: start time of array -- type: datetime
-    :param endTime: end time of array -- type: datetime
-    :param ptype_start: when the ptype starts -- type: datetime
-    :param interval: interval of times taken in seconds, e.g. 0.2 -- type float
-    :return array of 2 arrays with proper number of elements according to interval
-             first is stop_times, second is data_vals
-    '''
-    data_vals = []
-    stop_times = []
-    microInSec = 1000000
-    for sec in range(int(((startTime - endTime).seconds - 1) / interval)):
-        data_vals.append("")
-        time = ptype_start + timedelta(microseconds=sec / interval * microInSec)
-        stop_times.append(time.strftime('%m-%d-%y_%H:%M:%S.%f'))
-    return [stop_times, data_vals]
 
 def decompress_data(all_data, header):
     '''

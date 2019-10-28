@@ -6,7 +6,7 @@
     "Save Path": "/home/kazer-fed/Documents/Senior-Project/Extracted_Files",
 
     # Are you using the file path as a directory.
-    "As Directory": true,
+    "As Directory": false,
 
     # Desired data types. See comment at the bottom for a full list of known data types
     "Data Types": [
@@ -27,7 +27,7 @@
     "Night Start" : "20:00",
     # Awake period, how long can one be up and it still be considered part of
     # the same sleep period
-    "Awake Period": "1"
+    "Awake Period": "1",
     # This is the time zone offset,
     # SYSTEM defaults time zone of the device running this.
     # otherwise in the form of "+7" or "-8".
