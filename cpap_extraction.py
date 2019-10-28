@@ -600,21 +600,15 @@ def decompress_data(all_data, header):
                                                 "Values" : decomp_data}
     return raw_data
 
-##############################################################
-def data_to_csv(waveform):
-    try:
-        with open('test.csv', 'w') as f:
-            times = waveform['Times']
-            vals  = waveform['Values']
-            fieldnames = ['TIMES', 'VALUES']
+def data_to_csv(rawData):
+    for title, data in rawData.items():
+        with open("{}.csv".format(title), "w") as dataFile:
+            dataWriter = csv.writer(dataFile)
+            dataWriter.writerow(["DATE", "TIME", "VALUE"])
+            for time, val in zip(data["Times"], data["Values"]):
+                (date, time) = time.split("_")
+                dataWriter.writerow([date, time, val])
 
-            csv.DictWriter(f, fieldnames = fieldnames).writeheader()
-
-            for each in range(len(times)):
-                f.write("%s,%s\n"%(times[each], vals[each]))
-    except IOError:
-        print("CSV I/O Error")
-##############################################################
 
 # Global variables
 VERBOSE = False
@@ -730,5 +724,5 @@ if __name__ == '__main__':
     data = data_from_packets(PACKETS)
     data = process_cpap_binary(data, DATA_FILE)
     raw = decompress_data(data, header)
-    data_to_csv(raw['Breathing Flow Rate Waveform'])
+    data_to_csv(raw)
     exit()
