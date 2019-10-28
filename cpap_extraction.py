@@ -26,6 +26,7 @@ from datetime import datetime, timedelta   # For converting UNIX time
 import warnings                 # For raising warnings
 import re                       # For ripping unixtimes out of strings
 import sys
+import csv
 
 if sys.version_info < (3,6):
     print("""Error Version Python version 3.6 of higher required.\n
@@ -599,6 +600,14 @@ def decompress_data(all_data, header):
                                                 "Values" : decomp_data}
     return raw_data
 
+def data_to_csv(rawData):
+    for title, data in rawData.items():
+        with open("{}.csv".format(title), "w") as dataFile:
+            dataWriter = csv.writer(dataFile)
+            dataWriter.writerow(["DATE", "TIME", "VALUE"])
+            for time, val in zip(data["Times"], data["Values"]):
+                (date, time) = time.split("_")
+                dataWriter.writerow([date, time, val])
 
 
 # Global variables
@@ -715,4 +724,5 @@ if __name__ == '__main__':
     data = data_from_packets(PACKETS)
     data = process_cpap_binary(data, DATA_FILE)
     raw = decompress_data(data, header)
+    data_to_csv(raw)
     exit()
