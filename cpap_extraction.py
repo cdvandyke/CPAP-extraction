@@ -79,6 +79,7 @@ def setup_args():
 
     CONFIG.setdefault("Verbose", args.v)
     CONFIG.setdefault("Debug", args.d)
+    CONFIG.setdefault("Date Format", '%Y-%m-%d_%H-%M-%S')
 
     if CONFIG["As Directory"] != os.path.isdir(source) :
         raise FileNotFoundError("No directory provided.")
@@ -474,7 +475,7 @@ def convert_unix_time(unixtime):
         warnings.warn('WARNING: UNIX time in {} evaluated to beyond the year \
                        2038, if you really are from the future, hello!')
 
-    return datetime.utcfromtimestamp(unixtime).strftime('%Y-%m-%d_%H-%M-%S')
+    return datetime.utcfromtimestamp(unixtime).strftime(CONFIG["Date Format"])
 
 
 def twos(num):
@@ -553,14 +554,14 @@ def decompress_data(all_data, header):
     desired = [4352, 4356]
     microInSec = 1000000
     raw_data = {}
-    sessionStart = datetime.strptime(header['Start time'], '%Y-%m-%d_%H-%M-%S')
+    sessionStart = datetime.strptime(header['Start time'], CONFIG["Date Format"])
     # Decompress each type desired data type
     for type in desired:
         ptype_info = CPAP_DATA_TYPE.get(type, {'stop_times':True,  'ctype':'H',  'name':"Unknown"})
         ptype_data = [d for d in all_data if d['Data type'] == type][0]
         try:
-            ptype_start = datetime.strptime(ptype_data['time 1'], '%Y-%m-%d_%H-%M-%S')
-            ptype_end = datetime.strptime(ptype_data['time 2'], '%Y-%m-%d_%H-%M-%S')
+            ptype_start = datetime.strptime(ptype_data['time 1'], CONFIG["Date Format"])
+            ptype_end = datetime.strptime(ptype_data['time 2'], CONFIG["Date Format"])
         except:
             print("No start or end time for", type)
             continue
@@ -587,6 +588,65 @@ def decompress_data(all_data, header):
                                                 "Values" : decomp_data}
     return raw_data
 
+
+
+
+def file_sort(source):
+
+    class files:
+        '''
+        A class with comparison overload so sorting can be done using pythons
+        built in sort. Also has a gap method to find the time between the end of
+        one file and the start of another.
+
+        '''
+        def __init__(self, name, header):
+            self.name = name
+            self.start_time = datetime.strptime(header['Start time'], CONFIG["Date Format"])
+            self.end_time = datetime.strptime(header['Start time'], CONFIG["Date Format"])
+
+        def __lt__(self, other):
+            '''
+            This lets me call sort on a list of them
+            '''
+            return self.start_time < other.start_time
+
+        def __sub__(self, other):
+            """"
+            Time in hours between end of one file and the next
+            """
+            time = other.start_time - self.end_time
+            print(str(time))
+            return time.days*24.0 + time.seconds/3600.0
+
+        def __str__(self):
+            return str(self.name)
+
+    list = []
+    for dir, sub, f in os.walk(source):
+        for file in f:
+            name = os.path.join(source,file)
+            print(name)
+            if name[-4:] == ".001":
+                header = extract_header(open_file(name))
+                list.append(files(name, header))
+
+    list.sort()
+    groups = group(list)
+    return groups
+
+def group(list):
+    prev = list[0]
+    grouped = [[str(prev)]]
+
+    for file in list[0:]:
+        if prev - file < float(CONFIG["Awake Period"]):
+            grouped[-1].append(str(file))
+        else:
+            grouped.append([str(file)])
+        prev = file
+
+    return grouped
 
 # Global variables
 EXTRACTION_FIELDS = [
@@ -694,7 +754,9 @@ CPAP_DATA_TYPE = {# bool if stop times included, associated ctype for data vals,
 if __name__ == '__main__':
     source, destination = setup_args()
     if CONFIG.get("As Directory", False):
-        pass
+        groups = file_sort(source)
+        for g in groups:
+            print(g)
     else:
         data_file = open_file(source)
         delimiter = b'\xff\xff\xff\xff'
