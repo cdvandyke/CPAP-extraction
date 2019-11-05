@@ -1,12 +1,12 @@
 {
     # The path that the file or directory is loaded from.
-    "Load Path": "/home/kazer-f2/Documents/Senior-Project/001_files",
+    "Load Path": "/home/kazer-f2/Documents/Senior-Project/001_files/000008aa.001",
 
     # The path that the output data will be writtten too.
     "Save Path": "/home/kazer-fed/Documents/Senior-Project/Extracted_Files",
 
     # Are you using the file path as a directory(true or false).
-    "As Directory": true,
+    "As Directory": false,
 
     # Desired data types. See comment at the bottom for a full list of known data types
     "Data Types": [

@@ -63,6 +63,22 @@ class config(dict):
         except:
             warnings.warn("Error: Configuration not saved")
 
+    def __missing__(self, key):
+        defaults = {
+            "Debug": False,
+            "Verbose": False,
+            "As Directory": False,
+            "Date Format": "%Y-%m-%d_%H-%M-%S",
+            "Night Start" : "20:00",
+            "Awake Period": "1",
+            "UTC offset": "SYSTEM",
+            "Data Types": [4358, 4355],
+        }
+        if key in defaults:
+            return defaults[key]
+        else:
+            raise KeyError
+
 """
 CONFIG is for use as an importable singleton config file.
 """

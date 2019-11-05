@@ -24,6 +24,7 @@ from datetime import datetime, timedelta # For converting UNIX time
 import warnings                 # For raising warnings
 import re                       # For ripping unixtimes out of strings
 import sys
+import csv
 from py_config import CONFIG
 
 
@@ -588,6 +589,16 @@ def decompress_data(all_data, header):
                                                 "Values" : decomp_data}
     return raw_data
 
+def data_to_csv(rawData, destination):
+    for title, data in rawData.items():
+        file_name = "{}.csv".format(title)
+        full_path = os.path.join(destination, file_name )
+        with open(full_path, "w") as dataFile:
+            dataWriter = csv.writer(dataFile)
+            dataWriter.writerow(["DATE", "TIME", "VALUE"])
+            for time, val in zip(data["Times"], data["Values"]):
+                (date, time) = time.split("_")
+                dataWriter.writerow([date, time, val])
 
 
 
@@ -764,7 +775,5 @@ if __name__ == '__main__':
         packets = split_packets(data_file, header["Number of Packets"], delimiter)
         packet_data = data_from_packets(packets)
         data = process_cpap_binary(packet_data, data_file)
-        with open('that.txt','w') as file:
-            for d in data:
-                file.write("\n{}".format(d))
         raw = decompress_data(data, header)
+        data_to_csv(raw, destination)
