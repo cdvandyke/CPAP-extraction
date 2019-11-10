@@ -32,5 +32,5 @@
     # SYSTEM defaults time zone of the device running this.
     # otherwise in the form of "+7" or "-8".
     # System is recommended unless you are travelling.
-    "UTC offset": "SYSTEM"
+    "UTC Offset": "SYSTEM"
 }

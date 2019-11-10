@@ -64,6 +64,9 @@ class config(dict):
             warnings.warn("Error: Configuration not saved")
 
     def __missing__(self, key):
+        """
+        This gets called if a key is called that does not exist.
+        """
         defaults = {
             "Debug": False,
             "Verbose": False,
@@ -71,10 +74,11 @@ class config(dict):
             "Date Format": "%Y-%m-%d_%H-%M-%S",
             "Night Start" : "20:00",
             "Awake Period": "1",
-            "UTC offset": "SYSTEM",
+            "UTC Offset": "SYSTEM",
             "Data Types": [4358, 4355],
         }
         if key in defaults:
+            self.update({key: defaults[key]})
             return defaults[key]
         else:
             raise KeyError

@@ -68,6 +68,13 @@ class TestSaveFile(unittest.TestCase):
         with self.assertWarns(Warning):
             test_config.save()
 
+class TestDefaults(unittest.TestCase):
+    def test_contents(self):
+        test_config = py_config.config()
+        self.assertFalse("Debug" in test_config)
+        self.assertFalse(test_config["Debug"])
+        self.assertTrue("Debug" in test_config)
+
 
 if __name__ == '__main__':
     unittest.main()
