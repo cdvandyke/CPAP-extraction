@@ -471,6 +471,12 @@ def convert_unix_time(unixtime):
 def twos(num):
     '''
     gets the two compliment of input number
+
+    Args:
+     num: signed decimal number
+
+    Returns:
+     compliment: twos compliment of num
     '''
     bits = num.bit_length()
     compliment = num - (1 << bits)
@@ -484,15 +490,14 @@ def process_cpap_binary(packets, filehandle):
         -the data
         -data start and stop times for decompressing
 
-    Input
-    ----------
-    :param packets: array of dictionaries containing the following info
-    :param: filehandle: rest of data
+    Args:
+     packets: array of dictionaries containing the following info
+     filehandle: rest of data
 
-    Returns : data
+    Returns :
     --------
-    :return packets with appended inforamtion to each packet
-        information appended includes data_vals and stop_times
+    packets: packets from input with appended information to each packet.
+        Information appended includes data_vals and stop_times
     '''
     data = {}
     uint32_ctype = 'I'
@@ -533,40 +538,21 @@ def process_cpap_binary(packets, filehandle):
             packet["stop_times"] = data_vals
     return packets
 
-
-def blankDataFill(startTime, endTime, ptype_start, interval):
+def decompress_data(all_data):
     '''
-    Fills in blank data for data ptype if started or ended after or before
-    session start time or end time respectively
+    Decompresses data from the binary .001 file
 
-    :param startTime: start time of array -- type: datetime
-    :param endTime: end time of array -- type: datetime
-    :param ptype_start: when the ptype starts -- type: datetime
-    :param interval: interval of times taken in seconds, e.g. 0.2 -- type float
-    :return array of 2 arrays with proper number of elements according to interval
-             first is stop_times, second is data_vals
-    '''
-    data_vals = []
-    stop_times = []
-    microInSec = 1000000
-    for sec in range(int(((startTime - endTime).seconds - 1) / interval)):
-        data_vals.append("")
-        time = ptype_start + timedelta(microseconds=sec / interval * microInSec)
-        stop_times.append(time.strftime('%m-%d-%y_%H:%M:%S.%f'))
-    return [stop_times, data_vals]
+    Args:
+     all_data: output from process_cpap_binary
 
-def decompress_data(all_data, header):
-    '''
-    decompresses data
-    :param all_data: output from process_cpap_binary
-    :return raw_data: dictionary key = cpap string type, value = {'Values' : values, "Times": times
+    Returns:
+     raw_data: dictionary key = cpap string type, value = {'Values' : values, "Times": times
     '''
     # TODO get config file to determine desired data to be decompressed
     # ptypes to be decompressed
     desired = [4352, 4356]
     microInSec = 1000000
     raw_data = {}
-    sessionStart = datetime.strptime(header['Start time'], '%Y-%m-%d_%H-%M-%S')
     # Decompress each type desired data type
     for type in desired:
         ptype_info = CPAP_DATA_TYPE.get(type, {'stop_times':True,  'ctype':'H',  'name':"Unknown"})
@@ -600,7 +586,17 @@ def decompress_data(all_data, header):
                                                 "Values" : decomp_data}
     return raw_data
 
+
+
 def data_to_csv(rawData):
+    '''
+        Converts data from dictionary into csv file with the following format for columns:
+        Date, Time, Value
+        --Each data type will be in a unique file
+
+        Args:
+         rawData: dictionary key = cpap string type, value = {'Values' : values, "Times": times
+        '''
     for title, data in rawData.items():
         with open("{}.csv".format(title), "w") as dataFile:
             dataWriter = csv.writer(dataFile)
@@ -723,6 +719,6 @@ if __name__ == '__main__':
     header = extract_header(PACKETS[0])
     data = data_from_packets(PACKETS)
     data = process_cpap_binary(data, DATA_FILE)
-    raw = decompress_data(data, header)
+    raw = decompress_data(data)
     data_to_csv(raw)
     exit()
