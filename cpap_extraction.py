@@ -606,12 +606,21 @@ def data_to_csv(waveform):
         with open('test.csv', 'w') as f:
             times = waveform['Times']
             vals  = waveform['Values']
-            fieldnames = ['TIMES', 'VALUES']
+            dates = times.copy()
+            fieldnames = ['DATES', 'TIMES', 'VALUES']
+            i = 0
 
             csv.DictWriter(f, fieldnames = fieldnames).writeheader()
 
             for each in range(len(times)):
-                f.write("%s,%s\n"%(times[each], vals[each]))
+                temp = times[each].split('_')
+
+                dates[each] = temp[0]
+                times[each] = temp[1]
+
+            for each in range(len(times)):
+                f.write("%s,%s,%s\n"%(dates[each], times[each], vals[each]))
+
     except IOError:
         print("CSV I/O Error")
 ##############################################################
