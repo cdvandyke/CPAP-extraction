@@ -71,11 +71,12 @@ class config(dict):
             "Debug": False,
             "Verbose": False,
             "As Directory": False,
-            "Date Format": "%Y-%m-%d_%H-%M-%S",
+            "Date Format": "%Y-%m-%d",
             "Night Start" : "00:00",
             "Awake Period": "1",
             "UTC Offset": "SYSTEM",
             "Data Types": [4358, 4355],
+            "Dates": ["ALL"]
         }
         if key in defaults:
             self.update({key: defaults[key]})

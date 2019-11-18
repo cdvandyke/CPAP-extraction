@@ -42,8 +42,8 @@ class files:
     '''
     def __init__(self, name, header):
         self.name = name
-        self.start_time = datetime.strptime(header['Start time'], CONFIG["Date Format"])
-        self.end_time = datetime.strptime(header['Start time'], CONFIG["Date Format"])
+        self.start_time = header['Start time']
+        self.end_time = header['End time']
 
     def __lt__(self, other):
         '''
@@ -128,9 +128,9 @@ def setup_args():
 
 def process_groups(source, destination):
     groups = file_sort(source)
-    filter(groups)
+    groups = filter(groups)
     for group in groups:
-
+        print(group)
         for file in group:
             data_file = open_file(file)
             header = extract_header(data_file)
@@ -145,25 +145,24 @@ def filter(file_list):
         """
         This class is just a collection to keep all the values associated together
         """
-        def __init__(files):
+        def __init__(self, files):
             self.files = files
-            offset = datetime.strptime(CONFIG["Night Start"], '%H:%M')
+            offset = timedelta(hours = 20)
             offset_start = files[0].start_time - offset
             self.day_str = offset_start.strftime(CONFIG["Date Format"])
             self.duration = files[0].elapsed_time(files[-1])
 
-    valid_dates = dates_for_match():
-
-    if "ALL" in config["Dates"]:
+    if "ALL" in CONFIG["Dates"]:
         in_date_range = lambda x: True
     else:
+        valid_dates = dates_for_match(CONFIG["Dates"])
         in_date_range = lambda x: x in valid_dates
 
     files_by_day = {}
     for group in file_list:
         fg = file_group(group)
         day = fg.day_str
-
+        print(day)
         if in_date_range(day):
             if day in files:
                 if fg.duration > files[day].duration:
@@ -171,31 +170,42 @@ def filter(file_list):
             else:
                 files_by_day.update({day: fg})
 
-    valid_groups = [v.files for k,v in files.items()]
+    valid_groups = [v for k,v in files.items()]
     return valid_groups
 
-def dates_for_match():
+def dates_for_match(dates):
+    """
+    Finds all the days macthing the range in format
+    """
     valid_dates = []
-    if "ALL" in CONFIG["Dates"]:
-        raise ValueError("ALL and dates specified in date range ")
-    for v in CONFIG["Dates"]:
+    if "ALL" in dates:
+        raise ValueError("ALL and dates specified in date range")
+    for v in dates:
         if "TO" in v:
             date_range = expand_date_range(v)
             valid_dates = valid_dates + date_range
         else:
-            valid_dates.append(v)
+            day =  datetime.strptime(v, CONFIG["Date Format"])
+            valid_dates.append(day.strftime(CONFIG["Date Format"]))
+    return valid_dates
 
 
 def expand_date_range(v):
+    """
+    Expands the range out for a date range
+    """
     range = []
     vals = v.split(" TO ")
     if len(vals) != 2:
         raise ValueError("Improper value in date range")
-    start = vals[0]
-    end = vals[-1]
+
+    start =  datetime.strptime(vals[0], CONFIG["Date Format"])
+    end =   datetime.strptime(vals[-1], CONFIG["Date Format"])
+
     while start <= end:
         range.append(start.strftime(CONFIG["Date Format"]))
         start = start + timedelta(days=1)
+
     return range
 
 
@@ -204,7 +214,6 @@ def file_sort(source):
     for dir, sub, f in os.walk(source):
         for file in f:
             name = os.path.join(source,file)
-            print(name)
             if name[-4:] == ".001":
                 header = extract_header(open_file(name))
                 list.append(files(name, header))
@@ -215,13 +224,14 @@ def file_sort(source):
 
 def group(list):
     prev = list[0]
-    grouped = [[str(prev)]]
+    grouped = [[prev]]
 
-    for file in list[0:]:
-        if prev.gap_time(file) < float(CONFIG["Awake Period"]):
-            grouped[-1].append(str(file))
+    for file in list[1:]:
+        gap = prev.gap_time(file)
+        if gap < float(CONFIG["Awake Period"]):
+            grouped[-1].append(file)
         else:
-            grouped.append([str(file)])
+            grouped.append([file])
         prev = file
 
     return grouped
@@ -416,8 +426,8 @@ def extract_header(input_file):
             print("Pair added to header {}: {}".format(k, data_value))
         header.update({k: data_value})
 
-    header['Start time'] = convert_unix_time(header['Start time'])
-    header['End time'] = convert_unix_time(header['End time'])
+    header["Start time"] = datetime.utcfromtimestamp(header["Start time"]/1000)
+    header["End time"] = datetime.utcfromtimestamp(header["End time"]/1000)
     return header
 
 
@@ -692,7 +702,7 @@ def decompress_data(all_data, header):
     desired = [4352, 4356]
     microInSec = 1000000
     raw_data = {}
-    sessionStart = datetime.strptime(header['Start time'], CONFIG["Date Format"])
+    sessionStart = header['Start time']
     # Decompress each type desired data type
     for type in desired:
         ptype_info = CPAP_DATA_TYPE.get(type, {'stop_times':True,  'ctype':'H',  'name':"Unknown"})
@@ -843,9 +853,7 @@ CPAP_DATA_TYPE = {# bool if stop times included, associated ctype for data vals,
 if __name__ == '__main__':
     source, destination = setup_args()
     if CONFIG.get("As Directory", False):
-        groups = file_sort(source)
-        for g in groups:
-            print(g)
+        process_groups(source, destination)
     else:
         data_file = open_file(source)
         delimiter = b'\xff\xff\xff\xff'
