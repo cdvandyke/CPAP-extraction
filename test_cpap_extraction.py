@@ -7,7 +7,7 @@ import io               # For reading strings as files
 from mock import Mock   # For mocking input and output files
 from mock import patch  # For patching out file I/O
 import cpap_extraction  # The module to be tested
-
+import py_config
 
 class TestOpenFile(unittest.TestCase):
     '''
@@ -41,9 +41,9 @@ class TestOpenFile(unittest.TestCase):
 
 class TestSetupArgs(unittest.TestCase):
     def test_normal(self):
-        cpap_extraction.sys.argv = [ "cpap_extraction.py", "inputfile"]
+        cpap_extraction.sys.argv = [ "cpap_extraction.py", "inputfile.001"]
         input, output_path = cpap_extraction.setup_args()
-        self.assertEqual(input, "inputfile")
+        self.assertEqual(input, "inputfile.001")
         self.assertEqual(output_path, ".")
 
     def test_bad_argument(self):
@@ -51,17 +51,18 @@ class TestSetupArgs(unittest.TestCase):
         This test puts extra stuff in the output
         """
         if False:
-            cpap_extraction.sys.argv = [ "cpap_extraction.py", "inputfile", "output"]
+            cpap_extraction.sys.argv = [ "cpap_extraction.py", "inputfile", "extrastuff"]
             with self.assertRaises(SystemExit):
                 cpap_extraction.setup_args()
 
     def test_flags(self):
-        cpap_extraction.sys.argv = [ "cpap_extraction.py", "-v", "-d", "inputfile", "--destination=output"]
+        cpap_extraction.CONFIG = py_config.config()
+        cpap_extraction.sys.argv = [ "cpap_extraction.py", "-v", "-d", "inputfile.001", "--destination=output"]
         input, output_path = cpap_extraction.setup_args()
-        self.assertEqual(input, "inputfile")
+        self.assertEqual(input, "inputfile.001")
         self.assertEqual(output_path, "output")
-        self.assertTrue(cpap_extraction.VERBOSE)
-        self.assertTrue(cpap_extraction.DEBUG)
+        self.assertTrue(cpap_extraction.CONFIG["Verbose"])
+        self.assertTrue(cpap_extraction.CONFIG["Debug"])
 
 
 class TestReadPacket(unittest.TestCase):
@@ -119,9 +120,8 @@ class TestReadPacket(unittest.TestCase):
         data_file = io.BytesIO(b'\x34\x32\xff\xff\xff\xff\x42')
         delimiter = b''
 
-        with self.assertWarns(Warning):
+        with self.assertRaises(ValueError):
             packet = cpap_extraction.read_packet(data_file, delimiter)
-            self.assertEqual(packet, b'\x34\x32\xff\xff\xff\xff\x42')
 
     def test_invalid_delimiter(self):
         data_file = io.BytesIO(b'\x34\x32\xff\xff\xff\xff\x42')
@@ -156,7 +156,7 @@ class TestSplitPackets(unittest.TestCase):
         data_file = io.BytesIO(b'\x03\x0c\x01\x00\xff\xff\xff\xff\x45')
         delimiter = b'\xff\xff\xff\xff'
 
-        packets = cpap_extraction.split_packets(data_file, delimiter)
+        packets = cpap_extraction.split_packets(data_file, 2, delimiter)
         self.assertEqual(len(packets), 2)
         self.assertEqual(packets[0], b'\x03\x0c\x01\x00')
         self.assertEqual(packets[1], b'\x45')
@@ -350,35 +350,6 @@ class TestFieldOfLength(unittest.TestCase):
         sixteen = {"8": 'q', "another 8": 'Q'}
         dicts = [eight, four, sixteen]
         self.assertEqual(cpap_extraction.field_of_length(4,dicts), four)
-
-
-class TestExtractionSystem(unittest.TestCase):
-    """
-        This is designed a wholistic system test.
-    """
-    def read_results_file(self, filename):
-        results = []
-        with open(filename, 'r') as rfile:
-            text = rfile.read()
-            lines = text.split('\n')
-            for line in lines:
-                expected = line.strip()
-                if expected != "":
-                    if expected[0] != '#':
-                        results.append(expected)
-        return results
-
-
-    def test_file_one(self):
-        results = self.read_results_file("TestFiles/test_one_result.txt")
-        header, packet_data = cpap_extraction.extract_file("TestFiles/test_one.001")
-        headerstr = str(header).strip()
-        self.assertEqual(headerstr, results.pop(0))
-
-        for packet in packet_data:
-            self.assertEqual(str(packet).strip(), results.pop(0))
-
-        self.assertTrue(len(results) == 0)
 
 
 if __name__ == '__main__':

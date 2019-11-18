@@ -35,7 +35,7 @@ class TestSetFilePath(unittest.TestCase):
     def test_default_value(self):
         test_config = py_config.config()
         test_config.set_file_path()
-        expected = os.path.join(tempfile.gettempdir(), "py_config.json")
+        expected = os.path.join("cpap_config.json")
         self.assertEqual(expected, test_config.config_path)
 
     def test_local_config(self):

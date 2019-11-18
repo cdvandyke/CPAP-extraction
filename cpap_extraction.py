@@ -33,6 +33,42 @@ if sys.version_info < (3,6):
     If you are on python 4 this is untested, as python 4 does not yet exist.""")
     exit(-1)
 
+class files:
+    '''
+    A class with comparison overload so sorting can be done using pythons
+    built in sort. Also has a gap method to find the time between the end of
+    one file and the start of another.
+
+    '''
+    def __init__(self, name, header):
+        self.name = name
+        self.start_time = datetime.strptime(header['Start time'], CONFIG["Date Format"])
+        self.end_time = datetime.strptime(header['Start time'], CONFIG["Date Format"])
+
+    def __lt__(self, other):
+        '''
+        This lets me call sort on a list of them
+        '''
+        return self.start_time < other.start_time
+
+    def gap_time(self, other):
+        """"
+        Time in hours between end of one file and the beginning of the next
+        """
+        time = other.start_time - self.end_time
+        return time.days*24.0 + time.seconds/3600.0
+
+    def elapsed_time(self, other):
+        """
+        Time in hours between the start of the file and the end of the given files.
+        """
+        time = other.end_time - self.start_time
+        return time.days*24.0 + time.seconds/3600.0
+
+    def __str__(self):
+        return str(self.name)
+
+
 def setup_args():
     '''
     Sets up command-line arguments using a ArgumentParser
@@ -90,6 +126,105 @@ def setup_args():
 
     return source, destination
 
+def process_groups(source, destination):
+    groups = file_sort(source)
+    filter(groups)
+    for group in groups:
+
+        for file in group:
+            data_file = open_file(file)
+            header = extract_header(data_file)
+            packets = split_packets(data_file, header["Number of Packets"], delimiter)
+            packet_data = data_from_packets(packets)
+            data = process_cpap_binary(packet_data, data_file)
+            raw = decompress_data(data, header)
+
+def filter(file_list):
+
+    class file_group:
+        """
+        This class is just a collection to keep all the values associated together
+        """
+        def __init__(files):
+            self.files = files
+            offset = datetime.strptime(CONFIG["Night Start"], '%H:%M')
+            offset_start = files[0].start_time - offset
+            self.day_str = offset_start.strftime(CONFIG["Date Format"])
+            self.duration = files[0].elapsed_time(files[-1])
+
+    valid_dates = dates_for_match():
+
+    if "ALL" in config["Dates"]:
+        in_date_range = lambda x: True
+    else:
+        in_date_range = lambda x: x in valid_dates
+
+    files_by_day = {}
+    for group in file_list:
+        fg = file_group(group)
+        day = fg.day_str
+
+        if in_date_range(day):
+            if day in files:
+                if fg.duration > files[day].duration:
+                    files_by_day[day] = fg
+            else:
+                files_by_day.update({day: fg})
+
+    valid_groups = [v.files for k,v in files.items()]
+    return valid_groups
+
+def dates_for_match():
+    valid_dates = []
+    if "ALL" in CONFIG["Dates"]:
+        raise ValueError("ALL and dates specified in date range ")
+    for v in CONFIG["Dates"]:
+        if "TO" in v:
+            date_range = expand_date_range(v)
+            valid_dates = valid_dates + date_range
+        else:
+            valid_dates.append(v)
+
+
+def expand_date_range(v):
+    range = []
+    vals = v.split(" TO ")
+    if len(vals) != 2:
+        raise ValueError("Improper value in date range")
+    start = vals[0]
+    end = vals[-1]
+    while start <= end:
+        range.append(start.strftime(CONFIG["Date Format"]))
+        start = start + timedelta(days=1)
+    return range
+
+
+def file_sort(source):
+    list = []
+    for dir, sub, f in os.walk(source):
+        for file in f:
+            name = os.path.join(source,file)
+            print(name)
+            if name[-4:] == ".001":
+                header = extract_header(open_file(name))
+                list.append(files(name, header))
+
+    list.sort()
+    groups = group(list)
+    return groups
+
+def group(list):
+    prev = list[0]
+    grouped = [[str(prev)]]
+
+    for file in list[0:]:
+        if prev.gap_time(file) < float(CONFIG["Awake Period"]):
+            grouped[-1].append(str(file))
+        else:
+            grouped.append([str(file)])
+        prev = file
+
+    return grouped
 
 def extract_file(source_file, destination = '.', configfile ="" ):
     """
@@ -158,7 +293,8 @@ def split_packets(input_file, number_of_packets, delimiter = b'\xff\xff\xff\xff'
     '''
     Using the read_packet method, returns all packet_array found in input_file
     in an array of packet_array.
-
+    TODO: the packet spliting needs to take into account if there is more than
+    one packet of a type, the "no packets" has some information of how many packets of a type there are but this needs some interpertings
     Paramters
     ---------
     :param input_file : File
@@ -178,13 +314,14 @@ def split_packets(input_file, number_of_packets, delimiter = b'\xff\xff\xff\xff'
         The packet array to be returned
     '''
     packet_array = []
-    for i in range(number_of_packets):
+    i = number_of_packets
+    while i > 0:
         pos = input_file.tell()
         packet = read_packet(input_file, delimiter)
         if packet == b'' or len(packet) > 444:
             raise AssertionError("{} packets extracted, Expected {} packets".format(i, number_of_packets))
         packet_array.append(packet)
-
+        i = i - 1
     return packet_array
 
 
@@ -244,7 +381,7 @@ def extract_header(input_file):
     ----------
     fields : Dictionary {Field name: c_type}
         A dictionary containing the various fields found in a header packet,
-        along with their corresponding c_type, which determines the number of
+        along with their corresponding c_type, which determines the numberDudden of
         bytes that fiels uses. See the C_TYPES dictionary.
 
     Returns
@@ -599,65 +736,6 @@ def data_to_csv(rawData, destination):
             for time, val in zip(data["Times"], data["Values"]):
                 (date, time) = time.split("_")
                 dataWriter.writerow([date, time, val])
-
-
-
-def file_sort(source):
-
-    class files:
-        '''
-        A class with comparison overload so sorting can be done using pythons
-        built in sort. Also has a gap method to find the time between the end of
-        one file and the start of another.
-
-        '''
-        def __init__(self, name, header):
-            self.name = name
-            self.start_time = datetime.strptime(header['Start time'], CONFIG["Date Format"])
-            self.end_time = datetime.strptime(header['Start time'], CONFIG["Date Format"])
-
-        def __lt__(self, other):
-            '''
-            This lets me call sort on a list of them
-            '''
-            return self.start_time < other.start_time
-
-        def __sub__(self, other):
-            """"
-            Time in hours between end of one file and the next
-            """
-            time = other.start_time - self.end_time
-            print(str(time))
-            return time.days*24.0 + time.seconds/3600.0
-
-        def __str__(self):
-            return str(self.name)
-
-    list = []
-    for dir, sub, f in os.walk(source):
-        for file in f:
-            name = os.path.join(source,file)
-            print(name)
-            if name[-4:] == ".001":
-                header = extract_header(open_file(name))
-                list.append(files(name, header))
-
-    list.sort()
-    groups = group(list)
-    return groups
-
-def group(list):
-    prev = list[0]
-    grouped = [[str(prev)]]
-
-    for file in list[0:]:
-        if prev - file < float(CONFIG["Awake Period"]):
-            grouped[-1].append(str(file))
-        else:
-            grouped.append([str(file)])
-        prev = file
-
-    return grouped
 
 # Global variables
 EXTRACTION_FIELDS = [

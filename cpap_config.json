@@ -3,7 +3,7 @@
     "Load Path": "/home/kazer-f2/Documents/Senior-Project/001_files/000008aa.001",
 
     # The path that the output data will be writtten too.
-    "Save Path": "/home/kazer-fed/Documents/Senior-Project/Extracted_Files",
+    "Save Path": "/home/kazer-f2/Documents/Senior-Project",
 
     # Are you using the file path as a directory(true or false).
     "As Directory": false,
@@ -14,11 +14,17 @@
         4355
     ],
 
-    # Form of the date for file output and reading in dates below
-    "Date Format": "%Y-%m-%d_%H-%M-%S",
+    # Form of the date for file output and reading in dates below, use
+    # %Y for year
+    # %m for month
+    # %d for day
 
-    # All of the days that one wants data from or ALL for all days
-    # These can be individual days or ranges using <start day> TO <end_day>
+    "Date Format": "%Y-%m-%d",
+
+    # Specify which dates you wnat to extract data from
+    # For individual dates use the format specified in date format above
+    # ALL for all days
+    # For a range use <start day> TO <end_day>
     "Dates": [
       "ALL"
     ],

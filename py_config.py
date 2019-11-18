@@ -72,7 +72,7 @@ class config(dict):
             "Verbose": False,
             "As Directory": False,
             "Date Format": "%Y-%m-%d_%H-%M-%S",
-            "Night Start" : "20:00",
+            "Night Start" : "00:00",
             "Awake Period": "1",
             "UTC Offset": "SYSTEM",
             "Data Types": [4358, 4355],
