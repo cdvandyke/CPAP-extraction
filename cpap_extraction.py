@@ -598,7 +598,7 @@ def data_to_csv(rawData):
          rawData: dictionary key = cpap string type, value = {'Values' : values, "Times": times
         '''
     for title, data in rawData.items():
-        with open("{}.csv".format(title), "w") as dataFile:
+        with open("{}.csv".format(title), "w", newline="") as dataFile:
             dataWriter = csv.writer(dataFile)
             dataWriter.writerow(["DATE", "TIME", "VALUE"])
             for time, val in zip(data["Times"], data["Values"]):
