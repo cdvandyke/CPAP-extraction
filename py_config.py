@@ -12,6 +12,12 @@ import warnings                 # For raising warnings
 class config(dict):
 
     def __init__(self, *args, **kwargs):
+        """
+
+
+
+        
+        """
         self.config_path = ""
         super().__init__(*args, **kwargs)
 

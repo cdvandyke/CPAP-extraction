@@ -3,7 +3,7 @@
     "Load Path": "/home/kazer-f2/Documents/Senior-Project/001_files",
 
     # The path that the output data will be writtten too.
-    "Save Path": "/home/kazer-f2/Documents/Senior-Project",
+    "Save Path": "/home/kazer-f2/Documents/Senior-Project/Extracted_Files",
 
     # Are you using the file path as a directory(true or false).
     "As Directory": true,
@@ -26,7 +26,7 @@
     # ALL for all days
     # For a range use <start day> TO <end_day>
     "Dates": [
-      "ALL"
+      "2019-03-05 TO 2019-03-10"
     ],
 
     # Night start time in 24 hour time
