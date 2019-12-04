@@ -1,4 +1,4 @@
-#CPAP Extractor
+# CPAP Extractor
 
 This program extracts binary data from CPAP machines
 and converts it to a human readable CSV file.
