@@ -26,9 +26,9 @@ what type of data you would like to extract from the binary
 out of the 24 different data types.
 
 ## Contacts
-Ezra Dudden       -- edudden@msudenver.edu
-Chandler Van Dyke -- cdvandyke13@gmail.com
-Ben Mettlach      -- bmettlac@msudenver.edu
-Eric Kearney      -- ekearney@gmail.com
-Elie              -- eshamalo@msudenver.edu
-Sara              -- sshres20@msudenver.edu
+* Ezra Dudden       -- edudden@msudenver.edu
+* Chandler Van Dyke -- cdvandyke13@gmail.com
+* Ben Mettlach      -- bmettlac@msudenver.edu
+* Eric Kearney      -- ekearney@gmail.com
+* Elie              -- eshamalo@msudenver.edu
+* Sara              -- sshres20@msudenver.edu
