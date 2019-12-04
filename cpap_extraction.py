@@ -139,8 +139,7 @@ def process_groups(source, destination):
         for file in group:
             try:
                 data_file = open_file(file.name)
-                if CONFIG["Verbose"]:
-                    print("Processing file {}.".format(file.name))
+                print("Processing file {}.".format(file.name))
                 header = extract_header(data_file)
                 #Use the header for the first packet of a group
                 if group_header == {}:
@@ -349,12 +348,14 @@ def extract_file(source_file, destination = '.', configfile ="" ):
     :return packet_data: [Array Dict]
         An array of extracted dictionaries containg packet data
     """
-    data_file = open_file(source_file)
-    packets = split_packets(data_file)
-    header = extract_header(packets[0])
+    data_file = open_file(source)
+    delimiter = b'\xff\xff\xff\xff'
+    header = extract_header(data_file)
+    packets = split_packets(data_file, delimiter)
     packet_data = data_from_packets(packets)
-
-    return header, packet_data
+    data = process_cpap_binary(packet_data, data_file)
+    raw = decompress_data(data)
+    data_to_csv(raw, destination, header)
 
 
 def open_file(source):
@@ -687,38 +688,6 @@ def apply_type_and_time(length, packet_data):
                 packet_data.get("type"), packet_data.get("subtype") ))
 
     return packet_data
-
-
-def convert_unix_time(unixtime):
-    '''
-    Converts an integer, unitime, to a human-readable year-month-day,
-    hour-minute-second format. The raw data stores time values in milliseconds
-    which is UNIX time * 1000, this method corrects for that.
-
-    Paramters
-    ---------
-    :param unixtime : int
-        The UNIX time number to be converted
-
-    Returns
-    --------
-    :return human-readable-time : string
-        The UNIX time converted to year-month-day, hour-minute-second format
-    '''
-
-    try:
-        pass
-    except TypeError:
-        return 'ERROR: {} is invalid\n'.format(unixtime)
-
-    if unixtime <= 0:
-        warnings.warn('WARNING: UNIX time in {} evaluated to 0')
-
-    if unixtime >= 2147483647:
-        warnings.warn('WARNING: UNIX time in {} evaluated to beyond the year \
-                       2038, if you really are from the future, hello!')
-
-    return datetime.utcfromtimestamp(unixtime).strftime(CONFIG["Date Format"])
 
 
 def twos(num):

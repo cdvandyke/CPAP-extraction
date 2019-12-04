@@ -8,6 +8,7 @@ from mock import Mock   # For mocking input and output files
 from mock import patch  # For patching out file I/O
 import cpap_extraction  # The module to be tested
 import py_config
+from datetime import datetime
 
 class TestOpenFile(unittest.TestCase):
     '''
@@ -156,7 +157,7 @@ class TestSplitPackets(unittest.TestCase):
         data_file = io.BytesIO(b'\x03\x0c\x01\x00\xff\xff\xff\xff\x45')
         delimiter = b'\xff\xff\xff\xff'
 
-        packets = cpap_extraction.split_packets(data_file, 2, delimiter)
+        packets = cpap_extraction.split_packets(data_file, delimiter)
         self.assertEqual(len(packets), 2)
         self.assertEqual(packets[0], b'\x03\x0c\x01\x00')
         self.assertEqual(packets[1], b'\x45')
@@ -215,80 +216,13 @@ class TestDataFromPackets(unittest.TestCase):
         self.assertEqual(output, correct_output)
 
 
-class TestConvertUnixTime(unittest.TestCase):
-    '''
-    Tests the convert_unix_time method, which takes an int, unixtime, as an
-    argument, and returns the unix time converted into year-month-day,
-    hour:minute:second format. This converted format is returned as a string.
-
-    Methods
-    -------
-        testNormal
-            Tests a base case, 842323380000, which should evaluate to
-            1996-09-10 02:43:00
-        testZero
-            Tests that if unixtime = 0, a warning is raised, and the returned
-            string is 1970-01-01 00:00:00
-        testNegative
-            Tests that if unixtime < 0, a warning is raised, and the returned
-            string is 1970-01-01 00:00:00
-        testLargeValue
-            Tests that is unixtime > 2147483647000, a warning is raised
-        testNonInteger
-            The CPAP machines store time in UNIX time, but in milliseconds.
-            Therefore, convert_unix_time divides the passed in unixtime
-            argument by 1000. Therefore, we'll want to make sure
-            convert_unix_time correctly handles non-integer values, it should
-            simply discard any decimal values.
-        testBadArgument
-            Tests that convert_unix_time correctly catches a TypeError, and
-            returns 'ERROR: {unixtime} is invalid' instead.
-    '''
-
-    def test_normal(self):
-        unixtime = 842323380000
-        converted_time = cpap_extraction.convert_unix_time(unixtime)
-        self.assertEqual(converted_time, '1996-09-10_02-43-00')
-
-    def test_zero(self):
-        unixtime = 0
-        with self.assertWarns(Warning):
-            converted_time = cpap_extraction.convert_unix_time(unixtime)
-            self.assertEqual(converted_time, '1970-01-01_00-00-00')
-
-    def test_negative(self):
-        unixtime = -1
-        with self.assertWarns(Warning):
-            converted_time = cpap_extraction.convert_unix_time(unixtime)
-            self.assertEqual(converted_time, '1970-01-01_00-00-00')
-
-    def test_large_value(self):
-        unixtime = 2147483647000
-        with self.assertWarns(Warning):
-            converted_time = cpap_extraction.convert_unix_time(unixtime)
-            self.assertEqual(converted_time, '2038-01-19_03-14-07')
-
-    def test_non_integer(self):
-        # convert_unix_time should just drop extra milliseconds
-        unixtime = 842323380451
-        converted_time = cpap_extraction.convert_unix_time(unixtime)
-        self.assertEqual(converted_time, '1996-09-10_02-43-00')
-
-    def test_bad_argument(self):
-        # convert_unix_time should catch the TypeError, when it does, it's
-        # supposed to return whathever the original unixtime was
-        unixtime = 'test'
-        converted_time = cpap_extraction.convert_unix_time(unixtime)
-        self.assertEqual(converted_time, 'ERROR: test is invalid\n')
-
-
 class TestApplyDateandTime(unittest.TestCase):
     """
         This tests applying the date and time to a dictionary.
         As well as correctly addressing the packet type
     """
     def test_type_0_3(self):
-        expected_output = {'type': 0, 'time 1': '2019-03-01_08-28-46', 'time 2': '2019-03-01_11-54-15', 'no entries': 207, 'field 2': 1, 'subtype': 3}
+        expected_output = {'type': 0, 'time 1': datetime.utcfromtimestamp(1551428926), 'time 2': datetime.utcfromtimestamp(1551441255), 'no entries': 207, 'field 2': 1, 'subtype': 3}
         input = {'type': 0, 'time 1': 1551428926000, 'time 2': 1551441255000, 'no entries': 207, 'field 2': 1}
         output = cpap_extraction.apply_type_and_time(68, input)
         self.assertEqual(output, expected_output)
@@ -300,14 +234,14 @@ class TestApplyDateandTime(unittest.TestCase):
         self.assertEqual(output, expected_output)
 
     def test_type_0_4(self):
-        expected_output = {'type': 0, 'Data type': 4377, 'no packets': 1, 'time 1': 0, 'time 2': 0, 'subtype': 4}
-        input = {'type': 0, 'Data type': 4377, 'no packets': 1, 'time 1': 0, 'time 2': 0}
+        expected_output = {'type': 0, 'Data type': 4377, 'no packets': 1, 'time 1': datetime.utcfromtimestamp(1551428926), 'time 2': datetime.utcfromtimestamp(1551428926), 'subtype': 4}
+        input = {'type': 0, 'Data type': 4377, 'no packets': 1, 'time 1': 1551428926000, 'time 2': 1551428926000}
         output = cpap_extraction.apply_type_and_time(68, input)
         self.assertEqual(output, expected_output)
 
     def test_type_1(self):
-        expected_output = {'type': 1, 'Data type': 4377, 'no packets': 1, 'time 1': 0, 'time 2': 0, 'subtype': 1}
-        input = {'type': 1, 'Data type': 4377, 'no packets': 1, 'time 1': 0, 'time 2': 0}
+        expected_output = {'type': 1, 'Data type': 4377, 'no packets': 1, 'time 1': datetime.utcfromtimestamp(1), 'time 2': datetime.utcfromtimestamp(2), 'subtype': 1}
+        input = {'type': 1, 'Data type': 4377, 'no packets': 1, 'time 1': 1000, 'time 2': 2000}
         output = cpap_extraction.apply_type_and_time(84, input)
         self.assertEqual(output, expected_output)
 
@@ -318,7 +252,7 @@ class TestApplyDateandTime(unittest.TestCase):
         self.assertEqual(output, expected_output)
 
     def test_no_change(self):
-        input = {'type': 1, 'Data type': 4377, 'no packets': 1, 'time 1': "time 1", 'time 2': "time 2", 'no entries': 207, 'field 2': 1}
+        input = {'type': 1, 'Data type': 4377, 'no packets': 1, 'time 1': 0, 'time 2': 0, 'no entries': 207, 'field 2': 1}
         inputf = input.copy()
         output = cpap_extraction.apply_type_and_time(-1, inputf)
         self.assertDictEqual(output, input)
@@ -350,6 +284,65 @@ class TestFieldOfLength(unittest.TestCase):
         sixteen = {"8": 'q', "another 8": 'Q'}
         dicts = [eight, four, sixteen]
         self.assertEqual(cpap_extraction.field_of_length(4,dicts), four)
+
+
+class TestExtractionSystem(unittest.TestCase):
+    """
+        This is designed a wholistic system test.
+    """
+    def read_results_file(self, filename):
+        results = []
+        with open(filename, 'r') as rfile:
+            text = rfile.read()
+            lines = text.split('\n')
+            for line in lines:
+                expected = line.strip()
+                if expected != "":
+                    if expected[0] != '#':
+                        results.append(expected)
+        return results
+
+
+    def test_file_one(self):
+        results = self.read_results_file("TestFiles/test_one_result.txt")
+        header, packet_data = cpap_extraction.extract_file("TestFiles/test_one.001")
+
+        header = cpap_extraction.extract_header(data_file)
+        headerstr = str(header).strip()
+        self.assertEqual(headerstr, results.pop(0))
+
+        for packet in packet_data:
+            self.assertEqual(str(packet).strip(), results.pop(0))
+
+        self.assertTrue(len(results) == 0)
+
+class TestCSVExport(unittest.TestCase):
+    """
+        Tests the CSV export method
+    """
+
+    def test_type_error(self):
+        data = {
+            "1": "0",
+            "2": "0",
+            "3": "2",
+            "4": "5",
+            "5": "5",
+            "6": "2",
+        }
+        Times = [1,2,3,4,5,6]
+
+        header = {"Start time": datetime.utcfromtimestamp(1551428926)}
+        with self.assertRaises(TypeError):
+            cpap_extraction.data_to_csv(data, ".", header)
+
+    def test_missing_value(self):
+        Times = ["1_1","2_2","3_3","4_4","5_5","6_6"]
+        Values = [0,0,2,5,5]
+        data = {"Test": {"Times" : Times, "Values" : Values}}
+        header = {"Start time": datetime.utcfromtimestamp(1551428926)}
+        with self.assertRaises(TypeError):
+            cpap_extraction.data_to_csv(data, ".", header)
 
 
 if __name__ == '__main__':

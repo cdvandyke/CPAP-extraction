@@ -10,7 +10,8 @@
 
     # Desired data types. See comment at the bottom for a full list of known data types
     "Data Types": [
-        "ALL"
+        4358,
+        4355
     ],
 
     # Form of the date for file output and reading in dates below, use
@@ -25,7 +26,7 @@
     # ALL for all days
     # For a range use <start day> TO <end_day>
     "Dates": [
-      "2019-03-05 TO 2019-03-10"
+      "2019-03-10 TO 2019-03-15"
     ],
 
     # Night start time in 24 hour time
