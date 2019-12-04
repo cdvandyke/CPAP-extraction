@@ -119,7 +119,6 @@ def setup_args():
 
     CONFIG.setdefault("Verbose", args.v)
     CONFIG.setdefault("Debug", args.d)
-    CONFIG.setdefault("Date Format", '%Y-%m-%d_%H-%M-%S')
 
     if CONFIG["As Directory"] != os.path.isdir(source) :
         raise FileNotFoundError("No directory provided.")
@@ -162,7 +161,7 @@ def process_groups(source, destination):
 def merge_raws(raws, raw):
     """
     Takes two raws and merges them.
-    
+
     """
     if not raw:
         return raws
@@ -813,7 +812,7 @@ def decompress_data(all_data):
         ptype_data = [d for d in all_data if d['Data type'] == type][0]
         try:
             ptype_start = datetime.utcfromtimestamp(ptype_data['time 1']/1000)
-            ptype_end = datetime.utcfromtimestamp(ptype_data['time 1']/1000)
+            ptype_end = datetime.utcfromtimestamp(ptype_data['time 2']/1000)
         except:
             print("No start or end time for", type)
             continue
@@ -832,7 +831,7 @@ def decompress_data(all_data):
             intervalEnd = int(microInSec*stop)
             for i in range(counterMicroSec,intervalEnd, intervalStep):
                 time = ptype_start + timedelta(microseconds=i)
-                time_tags.append(time.strftime(CONFIG["Date Format"] + '_%H:%M:%S.%f'))
+                time_tags = time_tags + [time.strftime(CONFIG["Date Format"] + '_%H:%M:%S.%f')]
                 decomp_data.append(val)
             counterMicroSec = intervalEnd
 

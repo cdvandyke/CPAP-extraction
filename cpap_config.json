@@ -10,8 +10,7 @@
 
     # Desired data types. See comment at the bottom for a full list of known data types
     "Data Types": [
-        4358,
-        4355
+        "ALL"
     ],
 
     # Form of the date for file output and reading in dates below, use
