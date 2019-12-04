@@ -593,12 +593,16 @@ def data_to_csv(rawData, destination):
     for title, data in rawData.items():
         file_name = "{}.csv".format(title)
         full_path = os.path.join(destination, file_name )
+    
+        print(type(data))
         with open(full_path, "w") as dataFile:
             dataWriter = csv.writer(dataFile)
             dataWriter.writerow(["DATE", "TIME", "VALUE"])
             for time, val in zip(data["Times"], data["Values"]):
                 (date, time) = time.split("_")
                 dataWriter.writerow([date, time, val])
+
+    return file_name
 
 
 

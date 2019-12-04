@@ -380,6 +380,36 @@ class TestExtractionSystem(unittest.TestCase):
 
         self.assertTrue(len(results) == 0)
 
+class TestCSVExport(unittest.TestCase):
+    """
+        Tests the CSV export method
+    """
+    @patch("cpap_extraction.open")
+    def test_normal(self, mocked_os):
+        Times = [1,2,3,4,5,6]
+        Values = [0,0,2,5,5,2]
+        data = {"Times" : Times, "Values" : Values}
+        # data["Times"] = [1,2,3,4,5,6]
+        # data["Values"] = [0,0,2,5,5,2]
+        cpap_extraction.data_to_csv(data, ".")
+
+    def test_type_error(self):
+        data = {
+            "1": "0",
+            "2": "0",
+            "3": "2",
+            "4": "5",
+            "5": "5",
+            "6": "2",
+        }
+        cpap_extraction.data_to_csv(data, ".")
+
+    def test_missing_value(self):
+        data = {}
+        data["Times"] = [1,2,3,4,5,6]
+        data["Values"] = [0,0,2,5,5]
+        cpap_extraction.data_to_csv(data, ".")
+
 
 if __name__ == '__main__':
     unittest.main()
