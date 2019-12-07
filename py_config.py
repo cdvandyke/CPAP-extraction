@@ -13,18 +13,19 @@ class config(dict):
 
     def __init__(self, *args, **kwargs):
         """
-
-
-
-        
+        Uses normal dictionary init. And creates placeholder for file path.
         """
         self.config_path = ""
         super().__init__(*args, **kwargs)
 
     def load(self, name = ""):
         """
-        Load in the saved dictionary from the saved file path or a file that the user provides.
+        Load in the saved dictionary from the saved file path.
 
+        Parameters
+        ----------
+        :param name: String
+        string of the file we will load, optional if the file path has already been set.
         """
         self.set_file_path(name)
 
@@ -41,9 +42,14 @@ class config(dict):
 
     def set_file_path(self, name=""):
         """
-        Sets the file path to the provided path.
-        The default is if no path is provided is
-        TMP_PATH/py_config.json
+        Sets the file path to the provided path. The default is if no path is
+        provided is TMP_PATH/py_config.json warns if the file does not yet exist.
+
+        Parameters
+        ----------
+        :param name: string
+        A file path string pointing to the (potentail) file to load and save.
+
         """
         if name == "":
             self.config_path = path.join("cpap_config.json")
@@ -61,7 +67,11 @@ class config(dict):
 
     def save(self):
         """
-        Saves the file at the already provided path
+        Saves the file at the already provided path currently unused.
+
+        Warns
+        ----
+        On failed save
         """
         try :
             with open(self.config_path,'w') as file:
@@ -94,9 +104,3 @@ class config(dict):
 CONFIG is for use as an importable singleton config file.
 """
 CONFIG = config()
-
-if __name__ == "__main__":
-    c = config()
-    c.load("cpap_config.json")
-    print(str(c))
-    c.save()
