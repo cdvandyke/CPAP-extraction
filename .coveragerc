@@ -1,6 +1,7 @@
 [run]
 include =
 	cpap_extraction.py
+	py_config.py
 
 [report]
 exclude_lines =
