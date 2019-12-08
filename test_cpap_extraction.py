@@ -285,6 +285,13 @@ class TestFieldOfLength(unittest.TestCase):
         dicts = [eight, four, sixteen]
         self.assertEqual(cpap_extraction.field_of_length(4,dicts), four)
 
+class TestTwosCompliment(unittest.TestCase):
+    '''
+    Tests twos compliment function
+    '''
+    def testPosNeg(self):
+        self.assertEqual(cpap_extraction.twos(42),-22)
+
 
 class TestExtractionSystem(unittest.TestCase):
     """
@@ -304,15 +311,20 @@ class TestExtractionSystem(unittest.TestCase):
 
 
     def test_file_one(self):
+        test001File = "TestFiles/test_one.001"
         results = self.read_results_file("TestFiles/test_one_result.txt")
-        header, packet_data = cpap_extraction.extract_file("TestFiles/test_one.001")
-
-        header = cpap_extraction.extract_header(data_file)
+        dataDict = cpap_extraction.extract_file(test001File)
+        dataFile = cpap_extraction.open_file(test001File)
+        header = cpap_extraction.extract_header(dataFile)
         headerstr = str(header).strip()
         self.assertEqual(headerstr, results.pop(0))
 
-        for packet in packet_data:
+        for packet in dataDict["packet_data"]:
             self.assertEqual(str(packet).strip(), results.pop(0))
+
+        self.assertTrue(results.pop(0) in str(dataDict["data"][5]["data_vals"]))
+
+        self.assertTrue(results.pop(0) in str(dataDict["raw"]["Respitory Rate"]["Values"]))
 
         self.assertTrue(len(results) == 0)
 

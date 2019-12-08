@@ -26,6 +26,7 @@ import re                       # For ripping unixtimes out of strings
 import sys
 import csv
 from py_config import CONFIG
+import copy
 
 
 if sys.version_info < (3,6):
@@ -401,14 +402,18 @@ def extract_file(source_file, destination = '.', configfile ="" ):
     :return packet_data: [Array Dict]
         An array of extracted dictionaries containg packet data
     """
-    data_file = open_file(source)
+    data_file = open_file(source_file)
     delimiter = b'\xff\xff\xff\xff'
     header = extract_header(data_file)
     packets = split_packets(data_file, delimiter)
     packet_data = data_from_packets(packets)
-    data = process_cpap_binary(packet_data, data_file)
+    data = copy.deepcopy(packet_data)
+    data = process_cpap_binary(data, data_file)
     raw = decompress_data(data)
     data_to_csv(raw, destination, header)
+    dataDict = {"data_file": data_file, "header":header, "packets":packets,
+                "packet_data":packet_data, "data":data,"raw":raw}
+    return dataDict
 
 
 def open_file(source):
