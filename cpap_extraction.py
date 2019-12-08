@@ -15,23 +15,81 @@ C_TYPES : dictionary {char: int}
     A dictionary containing the relavent number of bytes for each C Type.
     See https://docs.python.org/3/library/struct.html
 
-VERBOSE : bool
-    If True, be VERBOSE
 '''
 import argparse                 # For command line arguments
 import os                       # For file IO
 import io
 import struct                   # For unpacking binary data
-from datetime import datetime, timedelta   # For converting UNIX time
+from datetime import datetime, timedelta # For converting UNIX time
 import warnings                 # For raising warnings
 import re                       # For ripping unixtimes out of strings
 import sys
 import csv
+from py_config import CONFIG
+
 
 if sys.version_info < (3,6):
     print("""Error Version Python version 3.6 of higher required.\n
     If you are on python 4 this is untested, as python 4 does not yet exist.""")
     exit(-1)
+
+
+class files:
+    '''
+    A class with comparison overload so sorting can be done using pythons
+    built in sort. Also has a gap method to find the time between the end of
+    one file and the start of another.
+
+    '''
+    def __init__(self, name, header):
+        self.name = name
+        self.start_time = header['Start time']
+        self.end_time = header['End time']
+
+    def __lt__(self, other):
+        '''
+        This lets me call sort on a list of files objects
+        '''
+        return self.start_time < other.start_time
+
+    def gap_time(self, other):
+        """
+        Time in hours between the end of the file and the start of the other
+        files.
+
+        Parameters
+        ----------
+        :param other : files
+            The file to be read
+
+        Returns
+        -------
+        :return source : float
+        Time difference in hours
+        """
+        time = other.start_time - self.end_time
+        return time.days*24.0 + time.seconds/3600.0
+
+    def elapsed_time(self, other):
+        """
+        Time in hours between the start of the file and the end of other files.
+
+        Parameters
+        ----------
+        :param other : files
+            The file to be read
+
+        Returns
+        -------
+        :return source : float
+        Time difference in hours
+        """
+        time = other.end_time - self.start_time
+        return time.days*24.0 + time.seconds/3600.0
+
+    def __str__(self):
+        return str(self.name)
+
 
 def setup_args():
     '''
@@ -41,18 +99,6 @@ def setup_args():
 
     Paser exits if the arguements are invalid
 
-    Attributes
-    ----------
-    SOURCE : path
-        The SOURCE data file(s) to be extracted
-
-    DESTINATION : path (optional)
-        The directory to place the extracted files
-
-    VERBOSE : Boolean (optional)
-        If True, tell the user how long the extraction took, how big the SOURCE
-        file(s) were, and how big each extracted file(s) is.
-
     Returns
     -------
     :return source : path
@@ -61,26 +107,283 @@ def setup_args():
     :return destination : path
         The file path of the output file
     '''
-    global VERBOSE
-    global DEBUG
-
+    source = ""
     parser = argparse.ArgumentParser(description='CPAP_data_extraction')
-    parser.add_argument('source', nargs=1, help='path to CPAP data')
+    parser.add_argument('file', nargs=1, help='path to 001 file or config file')
     parser.add_argument('--destination', nargs=1, default='.',
                         help='path to place extracted files')
-    parser.add_argument('-v', action='store_true', help='be VERBOSE')
+    parser.add_argument('-v', action='store_true', help='be verbose')
     parser.add_argument('-d', action='store_true', help='debug mode')
 
     args = parser.parse_args()
-    source = args.source[0]
-    destination = args.destination[0]
-    VERBOSE = args.v
-    DEBUG = args.d
+    file = args.file[0]
+
+    if file[-5:].lower() == ".json":
+        CONFIG.load(file)
+        source = CONFIG["Load Path"]
+        destination = CONFIG["Save Path"]
+
+    else:
+        source = file
+        destination = args.destination[0]
+        CONFIG.setdefault("As Directory", False)
+
+    CONFIG.setdefault("Verbose", args.v)
+    CONFIG.setdefault("Debug", args.d)
+
+    if CONFIG["As Directory"] != os.path.isdir(source) :
+        raise FileNotFoundError("No directory provided.")
+
+    if not CONFIG["As Directory"] and source[-4:] !=".001":
+        raise FileNotFoundError("No valid .001 file found")
 
     return source, destination
 
+def process_groups(source, destination):
+    """
+    Processes a group of files requires the config file to be set,
 
-def extract_file(source_file, destination = '.', verbose = False, debug = False ):
+    ?TODO: Potentially one could impliment multithreading with each thread taking a group.
+
+    Parameters
+    ----------
+    :param source : path
+        The binary file to be extracted
+
+    :param destination : path
+        The file path of the output file
+    """
+    groups = file_sort(source)
+    groups = filter(groups)
+    for group in groups:
+        group_header = {}
+        raws = {}
+        for file in group:
+            try:
+                data_file = open_file(file.name)
+                print("Processing file {}.".format(file.name))
+                header = extract_header(data_file)
+                #Use the header for the first packet of a group
+                if group_header == {}:
+                    group_header = header
+                packets = split_packets(data_file)
+                packet_data = data_from_packets(packets)
+                data = process_cpap_binary(packet_data, data_file)
+                raw = decompress_data(data)
+                raws = merge_raws(raws, raw)
+            except Error as e:
+                print("Error processing file {}, file skipped".format(file.name))
+                print(e)
+
+        if raws:
+            data_to_csv(raws, destination, group_header)
+
+
+def merge_raws(raws, raw):
+    """
+    Processes a group of files requires the config file to be set,
+
+    ?TODO: Potentially one could impliment multithreading with each thread taking a group.
+
+    Parameters
+    ----------
+    :param raws : {data_type : { value_type : [values] } }
+        This should be the earlier portion of the data
+
+    :param raw : {data_type : { value_type : [values] } }
+        This should be the later piece of data
+
+    Returns
+    -------
+    :return raws: {data_type : { value_type : [values] } }
+        Merged raws
+    """
+
+    if not raw:
+        return raws
+    if not raws:
+        return raw
+
+    for item in raw:
+        if item in raws:
+            for value in raw[item]:
+                if value in raws[item]:
+                    raws[item][value] = raws[item][value] + raw[item][value]
+                else:
+                    raws[item].update({value: raw[item][value]})
+        else:
+            raws.update({item: raw[item]})
+    return raws
+
+def filter(file_list):
+    """
+    Processes the list of files and matches them with the desired days according
+    to CONFIG["Dates"]
+
+    Parameters
+    ----------
+    :param raws : {data_type : { value_type : [values] } }
+        This should be the earlier portion of the data
+
+    :param raw : {data_type : { value_type : [values] } }
+        This should be the later piece of data
+
+    Returns
+    -------
+    :return raws: {data_type : { value_type : [values] } }
+        Merged raws
+    """
+    class file_group:
+        """
+        This class is just a collection to keep all the values associated together
+        some things are calculated here but no internal values should be changed after the fact.
+        """
+        def __init__(self, files):
+            self.files = files
+            offset = timedelta(hours = 20)
+            offset_start = files[0].start_time - offset
+            self.day_str = offset_start.strftime(CONFIG["Date Format"])
+            self.duration = files[0].elapsed_time(files[-1])
+
+    if "ALL" in CONFIG["Dates"]:
+        in_date_range = lambda x: True
+    else:
+        valid_dates = dates_for_match(CONFIG["Dates"])
+        in_date_range = lambda x: x in valid_dates
+
+    files_by_day = {}
+    for group in file_list:
+        fg = file_group(group)
+        day = fg.day_str
+        if in_date_range(day):
+            if day in files_by_day:
+                if fg.duration > files[day].duration:
+                    files_by_day[day] = fg
+            else:
+                files_by_day.update({day: fg})
+
+    valid_groups = [v.files for k,v in files_by_day.items()]
+    return valid_groups
+
+
+def dates_for_match(dates):
+    """
+    Finds all the days as required by the dates
+
+    Parameters
+    ----------
+    :param dates: [String]
+        array of strings, the strings can be '<DATE> TO <DATE>' or '<DATE>'
+        where <DATE> is determined by CONFIG["Date Format"]
+
+    Returns
+    -------
+    :return valid_dates: [String]
+        An array of strings with all the valid dates.
+    """
+
+    valid_dates = []
+    if "ALL" in dates:
+        raise ValueError("ALL and dates specified in date range")
+    for v in dates:
+        if "TO" in v:
+            date_range = expand_date_range(v)
+            valid_dates = valid_dates + date_range
+        else:
+            #Pack and unpack to fix formatting issues
+            day =  datetime.strptime(v, CONFIG["Date Format"])
+            valid_dates.append(day.strftime(CONFIG["Date Format"]))
+    return valid_dates
+
+
+def expand_date_range(s_range):
+    """
+    Expands the range out for a date range.
+
+    Parameters
+    ----------
+    :param s_range: String
+        string of the form '<DATE> TO <DATE>'
+        where <DATE> is determined by CONFIG["Date Format"]
+
+    Returns
+    -------
+    :return grouped: [[files]]
+        An array of arrays of files, each sub array is a group of files from
+        the same day.
+    """
+    range = []
+    vals = s_range.split(" TO ")
+    if len(vals) != 2:
+        raise ValueError("Improper value in date range")
+
+    start =  datetime.strptime(vals[0], CONFIG["Date Format"])
+    end =   datetime.strptime(vals[-1], CONFIG["Date Format"])
+
+    while start <= end:
+        range.append(start.strftime(CONFIG["Date Format"]))
+        start = start + timedelta(days=1)
+
+    return range
+
+
+def file_sort(source):
+    """
+    This creates a list of files from the source path and then turns it into a
+    sorted and grouped list of files(obj).
+
+    Parameters
+    ----------
+    :param source : Path
+        The folder of files to be read
+
+    Returns
+    -------
+    :return groups: [[files]]
+        An array of arrays of files, each sub array is a group of files from
+        the same day.
+    """
+    list = []
+    for dir, sub, f in os.walk(source):
+        for file in f:
+            name = os.path.join(source,file)
+            if name[-4:] == ".001":
+                header = extract_header(open_file(name))
+                list.append(files(name, header))
+    list.sort()
+    groups = group(list)
+    return groups
+
+
+def group(list):
+    """
+    This groups a list of files objects into groups
+
+    Parameters
+    ----------
+    :param list : [files]
+        A sorted list of files.
+
+    Returns
+    -------
+    :return grouped: [[files]]
+        An array of arrays of files, each sub array is a group of files from
+        the same day.
+    """
+    prev = list[0]
+    grouped = [[prev]]
+
+    for file in list[1:]:
+        gap = prev.gap_time(file)
+        if gap < float(CONFIG["Awake Period"]):
+            grouped[-1].append(file)
+        else:
+            grouped.append([file])
+        prev = file
+
+    return grouped
+
+def extract_file(source_file, destination = '.', configfile ="" ):
     """
     This runs the extraction algorithm as a one call function to run the whole
     module on a file.
@@ -98,17 +401,14 @@ def extract_file(source_file, destination = '.', verbose = False, debug = False 
     :return packet_data: [Array Dict]
         An array of extracted dictionaries containg packet data
     """
-    global VERBOSE
-    global DEBUG
-    VERBOSE = verbose
-    DEBUG = debug
-
-    data_file = open_file(source_file)
-    packets = split_packets(data_file)
-    header = extract_header(packets[0])
+    data_file = open_file(source)
+    delimiter = b'\xff\xff\xff\xff'
+    header = extract_header(data_file)
+    packets = split_packets(data_file, delimiter)
     packet_data = data_from_packets(packets)
-
-    return header, packet_data
+    data = process_cpap_binary(packet_data, data_file)
+    raw = decompress_data(data)
+    data_to_csv(raw, destination, header)
 
 
 def open_file(source):
@@ -132,7 +432,7 @@ def open_file(source):
         An in memory copy of the read-in file.
     '''
 
-    if VERBOSE:
+    if CONFIG["Verbose"]:
         print('Reading in {}'.format(source))
 
     if not os.path.isfile(source):
@@ -148,20 +448,21 @@ def open_file(source):
         raise TypeError("ERROR: source file {} is not a binary file.".format(source))
 
 
-def split_packets(input_file, delimeter = b'\xff\xff\xff\xff'):
+def split_packets(input_file, delimiter = b'\xff\xff\xff\xff'):
     '''
     Using the read_packet method, returns all packet_array found in input_file
     in an array of packet_array.
-
+    TODO: the packet spliting needs to take into account if there is more than
+    one packet of a type, the "no packets" has some information of how many packets of a type there are but this needs some interpertings
     Paramters
     ---------
     :param input_file : File
         A file object created by read_file(), this object contains the data
         packet_array to be read
 
-    :param delimeter : bytes
+    delimiter : bytes
         The 'separator' of the packet_array in input_file. For .001 files, the
-        delimeter is b'\xff\xff\xff\xff'
+        delimiter is b'\xff\xff\xff\xff'
 
     Attributes
     ----------
@@ -174,7 +475,7 @@ def split_packets(input_file, delimeter = b'\xff\xff\xff\xff'):
     packet_array = []
     while True:
         pos = input_file.tell()
-        packet = read_packet(input_file, delimeter)
+        packet = read_packet(input_file, delimiter)
         if packet == b'' or len(packet) > 444:
             input_file.seek(pos)
             break
@@ -183,7 +484,7 @@ def split_packets(input_file, delimeter = b'\xff\xff\xff\xff'):
     return packet_array
 
 
-def read_packet(input_file, delimeter):
+def read_packet(input_file, delimiter):
     '''
     The packets are seperated but due to uneven packet length the input file
     must be read one byte at a time.
@@ -194,9 +495,9 @@ def read_packet(input_file, delimeter):
         A file object created by read_file(), this object contains the data
         packets to be read
 
-    :param delimeter : bytes
+    delimiter : bytes
         The 'separator' of the packets in input_file. For .001 files, the
-        delimeter is b'\xff\xff\xff\xff'
+        delimiter is b'\xff\xff\xff\xff'
 
     Attributes
     ----------
@@ -204,24 +505,23 @@ def read_packet(input_file, delimeter):
         The complete packet of bytes to be returned
 
     byte : bytes
-        A single byte of data. If this byte isn't part of the delimeter, it
+        A single byte of data. If this byte isn't part of the delimiter, it
         gets appended to packet
     '''
-    if not isinstance(delimeter, bytes):
+    if not isinstance(delimiter, bytes):
         raise TypeError('Delimeter {} is invalid, it must be of type bytes')
 
     packet = b''
-    if delimeter == b'':
-        warnings.warn('WARNING: Delimeter is empty')
-        first_byte_of_delimeter = b''
+    if delimiter == b'':
+        raise ValueError("Deliminator is empty")
     else:
-        first_byte_of_delimeter = delimeter[0].to_bytes(1, 'little')
+        first_byte_of_delimiter = delimiter[0].to_bytes(1, 'little')
 
     while True:
         byte = input_file.read(1)
-        if byte == first_byte_of_delimeter:
+        if byte == first_byte_of_delimiter:
             input_file.seek(-1, 1)
-            if input_file.read(len(delimeter)) == delimeter:
+            if input_file.read(len(delimiter)) == delimiter:
                 break
         elif byte == b'':
             break
@@ -231,7 +531,7 @@ def read_packet(input_file, delimeter):
     return bytearray(packet)
 
 
-def extract_header(packet):
+def extract_header(input_file):
     '''
     TODO: Test
     Uses extract_packet to extract the header information from a packet.
@@ -240,7 +540,7 @@ def extract_header(packet):
     ----------
     fields : Dictionary {Field name: c_type}
         A dictionary containing the various fields found in a header packet,
-        along with their corresponding c_type, which determines the number of
+        along with their corresponding c_type, which determines the numberDudden of
         bytes that fiels uses. See the C_TYPES dictionary.
 
     Returns
@@ -263,13 +563,20 @@ def extract_header(packet):
               'Machine type': 'H',
               'Data size': 'I',
               'CRC': 'H',
-              'MCSize': 'H'}
+              'Number of Packets': 'H'}
 
-    header = extract_packet(packet, fields)
+    header = {}
+    for k,v in fields.items():
+        byte_size = C_TYPES[v]
+        byte = input_file.read(byte_size)
+        format  = "<" + v
+        data_value = struct.unpack(format , byte)[0]
+        if CONFIG["Verbose"]:
+            print("Pair added to header {}: {}".format(k, data_value))
+        header.update({k: data_value})
 
-    header["Start time"] = convert_unix_time(header["Start time"])
-    header["End time"] = convert_unix_time(header["End time"])
-
+    header["Start time"] = datetime.utcfromtimestamp(header["Start time"]/1000)
+    header["End time"] = datetime.utcfromtimestamp(header["End time"]/1000)
     return header
 
 
@@ -300,7 +607,7 @@ def extract_packet(packet, fields):
     data = {}
 
     for field in fields:
-        if VERBOSE:
+        if CONFIG["Verbose"]:
             print('Extracting {} from {}'.format(field, source))
 
         c_type = fields.get(field)
@@ -309,7 +616,7 @@ def extract_packet(packet, fields):
         bytes_to_be_extracted = packet[:number_of_bytes]
         del packet[:number_of_bytes]
 
-        if DEBUG:
+        if CONFIG["Debug"]:
             print('Bytes in {}: {}'.format(field, bytes_to_be_extracted))
             print('Remaining bytes in packet: {}'.format(packet))
 
@@ -350,7 +657,7 @@ def data_from_packets(packets, dict_list = []):
             data_array.append(packet_data)
 
         except KeyError:
-            if DEBUG:
+            if CONFIG["Debug"]:
                 warnings.warn('Packet {} was not extracted'.format(packet))
 
     return data_array
@@ -413,9 +720,9 @@ def apply_type_and_time(length, packet_data):
     blank = True
     for (field, data) in packet_data.items():
         if "time" in field:
-            if data != 0 and type(data)is type(1):
+            if data <= 0 and type(data)is type(1):
                 blank = False
-                packet_data[field] = convert_unix_time(data)
+                packet_data[field] = datetime.utcfromtimestamp(data/1000)
 
     if length == 67:
         packet_data.update({'subtype': 1, 'type':1})
@@ -429,43 +736,11 @@ def apply_type_and_time(length, packet_data):
         else:
             packet_data.update({'subtype': 3})
 
-    if VERBOSE:
+    if CONFIG["Verbose"]:
         print("Packet type {}.{} extracted.".format(
                 packet_data.get("type"), packet_data.get("subtype") ))
 
     return packet_data
-
-
-def convert_unix_time(unixtime):
-    '''
-    Converts an integer, unitime, to a human-readable year-month-day,
-    hour-minute-second format. The raw data stores time values in milliseconds
-    which is UNIX time * 1000, this method corrects for that.
-
-    Paramters
-    ---------
-    :param unixtime : int
-        The UNIX time number to be converted
-
-    Returns
-    --------
-    :return human-readable-time : string
-        The UNIX time converted to year-month-day, hour-minute-second format
-    '''
-
-    try:
-        unixtime = int(unixtime / 1000)
-    except TypeError:
-        return 'ERROR: {} is invalid\n'.format(unixtime)
-
-    if unixtime <= 0:
-        warnings.warn('WARNING: UNIX time in {} evaluated to 0')
-
-    if unixtime >= 2147483647:
-        warnings.warn('WARNING: UNIX time in {} evaluated to beyond the year \
-                       2038, if you really are from the future, hello!')
-
-    return datetime.utcfromtimestamp(unixtime).strftime('%Y-%m-%d_%H-%M-%S')
 
 
 def twos(num):
@@ -546,11 +821,11 @@ def decompress_data(all_data):
      all_data: output from process_cpap_binary
 
     Returns:
-     raw_data: dictionary key = cpap string type, value = {'Values' : values, "Times": times
+     raw_data: dictionary key = cpap string type, value = {'Values' : values, "Times": times}
     '''
     # TODO get config file to determine desired data to be decompressed
     # ptypes to be decompressed
-    desired = [4352, 4356]
+    desired = [int(x) for x in CONFIG["Data Types"]]
     microInSec = 1000000
     raw_data = {}
     # Decompress each type desired data type
@@ -558,8 +833,8 @@ def decompress_data(all_data):
         ptype_info = CPAP_DATA_TYPE.get(type, {'stop_times':True,  'ctype':'H',  'name':"Unknown"})
         ptype_data = [d for d in all_data if d['Data type'] == type][0]
         try:
-            ptype_start = datetime.strptime(ptype_data['time 1'], '%Y-%m-%d_%H-%M-%S')
-            ptype_end = datetime.strptime(ptype_data['time 2'], '%Y-%m-%d_%H-%M-%S')
+            ptype_start = datetime.utcfromtimestamp(ptype_data['time 1']/1000)
+            ptype_end = datetime.utcfromtimestamp(ptype_data['time 2']/1000)
         except:
             print("No start or end time for", type)
             continue
@@ -578,7 +853,7 @@ def decompress_data(all_data):
             intervalEnd = int(microInSec*stop)
             for i in range(counterMicroSec,intervalEnd, intervalStep):
                 time = ptype_start + timedelta(microseconds=i)
-                time_tags.append(time.strftime('%m-%d-%y_%H:%M:%S.%f'))
+                time_tags = time_tags + [time.strftime(CONFIG["Date Format"] + '_%H:%M:%S.%f')]
                 decomp_data.append(val)
             counterMicroSec = intervalEnd
 
@@ -588,27 +863,27 @@ def decompress_data(all_data):
 
 
 
-def data_to_csv(rawData):
+def data_to_csv(rawData, destination, header):
     '''
         Converts data from dictionary into csv file with the following format for columns:
         Date, Time, Value
         --Each data type will be in a unique file
 
         Args:
-         rawData: dictionary key = cpap string type, value = {'Values' : values, "Times": times
+         rawData: dictionary key = cpap string type, value = {'Values' : values, "Times": times }
         '''
     for title, data in rawData.items():
-        with open("{}.csv".format(title), "w", newline="") as dataFile:
+        date_str = header["Start time"].strftime(CONFIG["Date Format"])
+        filename = "{}:{}.csv".format(date_str, title)
+        filepath = os.path.join(destination, filename)
+        with open(filepath, "w", newline="") as dataFile:
             dataWriter = csv.writer(dataFile)
             dataWriter.writerow(["DATE", "TIME", "VALUE"])
             for time, val in zip(data["Times"], data["Values"]):
                 (date, time) = time.split("_")
                 dataWriter.writerow([date, time, val])
 
-
 # Global variables
-VERBOSE = False
-DEBUG = False
 EXTRACTION_FIELDS = [
         # Type 0
             {   'type':'B',
@@ -713,12 +988,14 @@ CPAP_DATA_TYPE = {# bool if stop times included, associated ctype for data vals,
 
 if __name__ == '__main__':
     source, destination = setup_args()
-    DATA_FILE = open_file(source)
-    PACKET_DELIMETER = b'\xff\xff\xff\xff'
-    PACKETS = split_packets(DATA_FILE, PACKET_DELIMETER)
-    header = extract_header(PACKETS[0])
-    data = data_from_packets(PACKETS)
-    data = process_cpap_binary(data, DATA_FILE)
-    raw = decompress_data(data)
-    data_to_csv(raw)
-    exit()
+    if CONFIG.get("As Directory", False):
+        process_groups(source, destination)
+    else:
+        data_file = open_file(source)
+        delimiter = b'\xff\xff\xff\xff'
+        header = extract_header(data_file)
+        packets = split_packets(data_file, delimiter)
+        packet_data = data_from_packets(packets)
+        data = process_cpap_binary(packet_data, data_file)
+        raw = decompress_data(data)
+        data_to_csv(raw, destination, header)
