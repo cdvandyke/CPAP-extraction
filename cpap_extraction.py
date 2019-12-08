@@ -48,20 +48,31 @@ class files:
 
     def __lt__(self, other):
         '''
-        This lets me call sort on a list of them
+        This lets me call sort on a list of files objects
         '''
         return self.start_time < other.start_time
 
     def gap_time(self, other):
-        """"
-        Time in hours between end of one file and the beginning of the next
+        """
+        Time in hours between the end of the file and the start of the other
+        files.
+
+        Parameters
+        ----------
+        :param other : files
+            The file to be read
+
+        Returns
+        -------
+        :return source : float
+        Time difference in hours
         """
         time = other.start_time - self.end_time
         return time.days*24.0 + time.seconds/3600.0
 
     def elapsed_time(self, other):
         """
-        Time in hours between the start of the file and the end of the given files.
+        Time in hours between the start of the file and the end of other files.
 
         Parameters
         ----------
@@ -130,6 +141,17 @@ def setup_args():
 
 def process_groups(source, destination):
     """
+    Processes a group of files requires the config file to be set,
+
+    ?TODO: Potentially one could impliment multithreading with each thread taking a group.
+
+    Parameters
+    ----------
+    :param source : path
+        The binary file to be extracted
+
+    :param destination : path
+        The file path of the output file
     """
     groups = file_sort(source)
     groups = filter(groups)
@@ -159,9 +181,24 @@ def process_groups(source, destination):
 
 def merge_raws(raws, raw):
     """
-    Takes two raws and merges them.
+    Processes a group of files requires the config file to be set,
 
+    ?TODO: Potentially one could impliment multithreading with each thread taking a group.
+
+    Parameters
+    ----------
+    :param raws : {data_type : { value_type : [values] } }
+        This should be the earlier portion of the data
+
+    :param raw : {data_type : { value_type : [values] } }
+        This should be the later piece of data
+
+    Returns
+    -------
+    :return raws: {data_type : { value_type : [values] } }
+        Merged raws
     """
+
     if not raw:
         return raws
     if not raws:
@@ -179,7 +216,23 @@ def merge_raws(raws, raw):
     return raws
 
 def filter(file_list):
+    """
+    Processes the list of files and matches them with the desired days according
+    to CONFIG["Dates"]
 
+    Parameters
+    ----------
+    :param raws : {data_type : { value_type : [values] } }
+        This should be the earlier portion of the data
+
+    :param raw : {data_type : { value_type : [values] } }
+        This should be the later piece of data
+
+    Returns
+    -------
+    :return raws: {data_type : { value_type : [values] } }
+        Merged raws
+    """
     class file_group:
         """
         This class is just a collection to keep all the values associated together
